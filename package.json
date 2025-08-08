@@ -1,0 +1,50 @@
+{
+  "name": "@cns/mcp-server",
+  "version": "1.0.0",
+  "description": "Central Nervous System MCP Server for Autonomous Multi-Agent Orchestration",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "cns-client": "dist/client/index.js"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest",
+    "lint": "eslint src"
+  },
+  "keywords": [
+    "mcp",
+    "orchestration",
+    "multi-agent",
+    "claude",
+    "autonomous",
+    "ai"
+  ],
+  "author": "CNS Team",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "latest",
+    "zod": "latest",
+    "winston": "latest",
+    "better-sqlite3": "latest",
+    "@lancedb/lancedb": "latest",
+    "redis": "latest",
+    "simple-git": "latest",
+    "node-cron": "latest",
+    "uuid": "latest",
+    "dotenv": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/uuid": "latest",
+    "@types/better-sqlite3": "latest",
+    "typescript": "latest",
+    "tsx": "latest",
+    "vitest": "latest",
+    "eslint": "latest",
+    "@eslint/js": "latest",
+    "typescript-eslint": "latest"
+  }
+}

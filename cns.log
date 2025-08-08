@@ -1,0 +1,13 @@
+{"level":"info","message":"Starting CNS MCP Server...","timestamp":"2025-08-08T04:57:09.569Z"}
+{"level":"info","message":"Initializing database","timestamp":"2025-08-08T04:57:09.570Z"}
+{"level":"info","message":"Database initialized","timestamp":"2025-08-08T04:57:09.571Z"}
+{"level":"info","message":"Starting orchestration engine","timestamp":"2025-08-08T04:57:09.571Z"}
+{"level":"info","message":"Loaded 0 workflows from database","timestamp":"2025-08-08T04:57:09.573Z"}
+{"level":"info","message":"CNS MCP Server running on stdio","timestamp":"2025-08-08T04:57:09.601Z"}
+{"level":"info","message":"Starting CNS MCP Server...","timestamp":"2025-08-08T04:58:33.399Z"}
+{"level":"info","message":"Initializing database","timestamp":"2025-08-08T04:58:33.400Z"}
+{"level":"info","message":"Database initialized","timestamp":"2025-08-08T04:58:33.401Z"}
+{"level":"info","message":"Starting orchestration engine","timestamp":"2025-08-08T04:58:33.401Z"}
+{"level":"info","message":"Loaded 0 workflows from database","timestamp":"2025-08-08T04:58:33.401Z"}
+{"level":"info","message":"CNS MCP Server running on stdio","timestamp":"2025-08-08T04:58:33.414Z"}
+{"args":{},"level":"info","message":"Tool called: get_system_status","timestamp":"2025-08-08T04:58:33.421Z"}
