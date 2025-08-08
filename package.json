@@ -31,8 +31,7 @@
     "test:integration": "npm run build && node scripts/test-embedding.js",
     "validate:production": "npm run build && node dist/cli/server.js validate",
     "lint": "eslint src",
-    "prepublish": "node scripts/prepare-publish.js",
-    "prepublishOnly": "npm run build:production && npm test"
+    "prepublishOnly": "npm run build:production && npm test && node scripts/prepare-publish.js"
   },
   "keywords": [
     "mcp",
