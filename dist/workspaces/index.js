@@ -11,7 +11,8 @@ export class WorkspaceManager {
     git;
     constructor(config) {
         this.workspacesDir = config?.workspaces_dir || '/tmp/cns-workspaces';
-        this.git = simpleGit();
+        // Allow git context to be overridden (for testing)
+        this.git = config?.git || simpleGit();
     }
     async create(args) {
         logger.info('Creating workspace', args);
@@ -103,7 +104,11 @@ export class WorkspaceManager {
             }
             // Remove git worktree
             try {
-                await this.git.raw(['worktree', 'remove', workspacePath, args.force ? '--force' : '']);
+                const removeArgs = ['worktree', 'remove', workspacePath];
+                if (args.force) {
+                    removeArgs.push('--force');
+                }
+                await this.git.raw(removeArgs);
             }
             catch (error) {
                 // If worktree remove fails but force is requested, try manual cleanup

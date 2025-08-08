@@ -34,18 +34,22 @@ describe('WorkspaceManager E2E Tests', () => {
     // Create initial commit
     await git.raw(['commit', '--allow-empty', '-m', 'Initial commit']);
     
-    // Create a test branch
+    // Create a test branch - this will be our worktree base instead of main
     await git.checkoutLocalBranch('feature-test');
     await git.raw(['commit', '--allow-empty', '-m', 'Feature branch commit']);
+    
+    // Create another branch to avoid conflicts
+    await git.checkoutLocalBranch('dev-branch');
+    await git.raw(['commit', '--allow-empty', '-m', 'Dev branch commit']);
+    
+    // Stay on main branch (so it's occupied and can't be used for worktrees)
     await git.checkout('main');
     
-    // Initialize workspace manager
+    // Initialize workspace manager with test directory context
     workspaceManager = new WorkspaceManager({
-      workspaces_dir: workspacesDir
+      workspaces_dir: workspacesDir,
+      git: simpleGit(testDir)  // Pass git context directly
     });
-
-    // Change to test directory for git operations
-    process.chdir(testDir);
   });
 
   afterEach(async () => {
@@ -75,14 +79,14 @@ describe('WorkspaceManager E2E Tests', () => {
   test('should create git worktree successfully', async () => {
     const result = await workspaceManager.create({
       agent_id: 'test-agent-1',
-      base_ref: 'main'
+      base_ref: 'feature-test'  // Use feature-test instead of main
     });
 
     const response = JSON.parse(result.content[0].text);
     
     expect(response.status).toBe('created');
     expect(response.agent_id).toBe('test-agent-1');
-    expect(response.base_ref).toBe('main');
+    expect(response.base_ref).toBe('feature-test');
     expect(response.workspace_path).toContain('test-agent-1');
 
     // Verify worktree was actually created
@@ -90,16 +94,16 @@ describe('WorkspaceManager E2E Tests', () => {
     expect(worktreeList).toContain('test-agent-1');
   });
 
-  test('should create worktree from feature branch', async () => {
+  test('should create worktree from dev branch', async () => {
     const result = await workspaceManager.create({
       agent_id: 'test-agent-2',
-      base_ref: 'feature-test'
+      base_ref: 'dev-branch'  // Use dev-branch to avoid conflicts
     });
 
     const response = JSON.parse(result.content[0].text);
     
     expect(response.status).toBe('created');
-    expect(response.base_ref).toBe('feature-test');
+    expect(response.base_ref).toBe('dev-branch');
 
     // Verify worktree is on correct branch
     const worktreeList = await git.raw(['worktree', 'list', '--porcelain']);
@@ -110,13 +114,13 @@ describe('WorkspaceManager E2E Tests', () => {
     // Create first workspace
     await workspaceManager.create({
       agent_id: 'duplicate-test',
-      base_ref: 'main'
+      base_ref: 'feature-test'
     });
 
     // Try to create duplicate
     const result = await workspaceManager.create({
       agent_id: 'duplicate-test',
-      base_ref: 'main'
+      base_ref: 'feature-test'
     });
 
     const response = JSON.parse(result.content[0].text);
@@ -128,7 +132,7 @@ describe('WorkspaceManager E2E Tests', () => {
     // Create workspace first
     await workspaceManager.create({
       agent_id: 'cleanup-test',
-      base_ref: 'main'
+      base_ref: 'feature-test'
     });
 
     // Verify it exists
@@ -163,7 +167,7 @@ describe('WorkspaceManager E2E Tests', () => {
     // Create workspace
     await workspaceManager.create({
       agent_id: 'force-cleanup-test',
-      base_ref: 'main'
+      base_ref: 'dev-branch'
     });
 
     // Force cleanup (simulates stuck workspace)
@@ -178,9 +182,9 @@ describe('WorkspaceManager E2E Tests', () => {
   });
 
   test('should get accurate workspace statistics', async () => {
-    // Create multiple workspaces
-    await workspaceManager.create({ agent_id: 'stats-test-1', base_ref: 'main' });
-    await workspaceManager.create({ agent_id: 'stats-test-2', base_ref: 'feature-test' });
+    // Create multiple workspaces using different branches
+    await workspaceManager.create({ agent_id: 'stats-test-1', base_ref: 'feature-test' });
+    await workspaceManager.create({ agent_id: 'stats-test-2', base_ref: 'dev-branch' });
 
     const stats = await workspaceManager.getStats();
 
@@ -199,18 +203,18 @@ describe('WorkspaceManager E2E Tests', () => {
   test('should sanitize agent IDs properly', async () => {
     const result = await workspaceManager.create({
       agent_id: 'test/agent@with#special$chars!',
-      base_ref: 'main'
+      base_ref: 'feature-test'
     });
 
     const response = JSON.parse(result.content[0].text);
     expect(response.status).toBe('created');
     
-    // Verify sanitized path doesn't contain dangerous characters
-    expect(response.workspace_path).not.toContain('/');
-    expect(response.workspace_path).not.toContain('@');
-    expect(response.workspace_path).not.toContain('#');
-    expect(response.workspace_path).not.toContain('$');
-    expect(response.workspace_path).not.toContain('!');
+    // Verify sanitized agent ID portion doesn't contain dangerous characters
+    const agentIdPart = response.workspace_path.split('/').pop();
+    expect(agentIdPart).not.toContain('@');
+    expect(agentIdPart).not.toContain('#');
+    expect(agentIdPart).not.toContain('$');
+    expect(agentIdPart).not.toContain('!');
   });
 
   test('should validate base reference exists', async () => {
@@ -221,11 +225,19 @@ describe('WorkspaceManager E2E Tests', () => {
   });
 
   test('should handle concurrent workspace operations', async () => {
-    // Create multiple workspaces concurrently
+    // Create multiple branches for concurrent testing
+    for (let i = 0; i < 3; i++) {
+      await git.checkoutLocalBranch(`concurrent-branch-${i}`);
+      await git.raw(['commit', '--allow-empty', '-m', `Concurrent branch ${i}`]);
+    }
+    await git.checkout('main');
+
+    // Create multiple workspaces concurrently using different branches
+    const branches = ['feature-test', 'dev-branch', 'concurrent-branch-0', 'concurrent-branch-1', 'concurrent-branch-2'];
     const promises = Array.from({ length: 5 }, (_, i) =>
       workspaceManager.create({
         agent_id: `concurrent-test-${i}`,
-        base_ref: 'main'
+        base_ref: branches[i]
       })
     );
 
@@ -248,7 +260,7 @@ describe('WorkspaceManager E2E Tests', () => {
     const cleanupResults = await Promise.all(cleanupPromises);
     
     // All cleanup should succeed
-    cleanupResults.forEach((result, i) => {
+    cleanupResults.forEach((result) => {
       const response = JSON.parse(result.content[0].text);
       expect(response.status).toBe('cleaned');
     });

@@ -7,6 +7,7 @@ import { logger } from '../utils/logger.js';
 import { config } from '../config/index.js';
 import { CNSError } from '../utils/error-handler.js';
 import * as lancedb from '@lancedb/lancedb';
+import { Schema, Field, FixedSizeList, Float32, Utf8, List } from 'apache-arrow';
 import { EmbeddingProvider, createEmbeddingProvider } from './embedding-providers.js';
 
 interface MemoryRecord {
@@ -189,17 +190,17 @@ export class MemorySystem {
       // Connect to LanceDB
       this.lanceDb = await lancedb.connect('./data/lancedb');
       
-      // Define schema for memory table
-      const schema = [
-        { name: 'id', type: 'string' },
-        { name: 'content', type: 'string' },
-        { name: 'type', type: 'string' },
-        { name: 'tags', type: 'list<string>' },
-        { name: 'workflow_id', type: 'string' },
-        { name: 'metadata', type: 'string' }, // JSON string
-        { name: 'embedding', type: `fixed_size_list<float>[${this.embeddingDimension}]` },
-        { name: 'created_at', type: 'string' }
-      ];
+      // Define proper Apache Arrow schema for memory table
+      const schema = new Schema([
+        new Field('id', new Utf8(), false),
+        new Field('content', new Utf8(), false),
+        new Field('type', new Utf8(), false),
+        new Field('tags', new List(new Field('item', new Utf8(), true)), true), // Array of strings
+        new Field('workflow_id', new Utf8(), true), // Nullable
+        new Field('metadata', new Utf8(), true), // JSON string, nullable
+        new Field('embedding', new FixedSizeList(this.embeddingDimension, new Field('item', new Float32(), true)), true), // Vector, nullable
+        new Field('created_at', new Utf8(), false)
+      ]);
       
       // Create or open memory table
       try {
@@ -212,7 +213,15 @@ export class MemorySystem {
       }
       
     } catch (error) {
-      logger.warn('Failed to initialize LanceDB, vector search will be disabled', { error });
+      // Log specific error details for debugging
+      if (error instanceof Error) {
+        logger.warn('Failed to initialize LanceDB, vector search will be disabled', { 
+          error: error.message,
+          stack: error.stack?.split('\n').slice(0, 3).join('\n') // First 3 lines of stack
+        });
+      } else {
+        logger.warn('Failed to initialize LanceDB, vector search will be disabled', { error });
+      }
       this.lanceDb = null;
       this.memoryTable = null;
     }
