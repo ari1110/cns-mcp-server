@@ -107,14 +107,20 @@ export class CNSMCPServer {
                 },
                 {
                     name: 'retrieve_memory',
-                    description: 'Retrieve memories using semantic search',
+                    description: 'Retrieve memories using semantic search, text search, or hybrid approach',
                     inputSchema: {
                         type: 'object',
                         properties: {
                             query: { type: 'string' },
                             filters: { type: 'object' },
-                            limit: { type: 'number' },
-                            threshold: { type: 'number' },
+                            limit: { type: 'number', default: 10 },
+                            threshold: { type: 'number', default: 0.7 },
+                            search_mode: {
+                                type: 'string',
+                                enum: ['semantic', 'text', 'hybrid'],
+                                default: 'hybrid',
+                                description: 'Search strategy: semantic (vector), text (SQL LIKE), or hybrid (both combined)'
+                            },
                         },
                         required: ['query'],
                     },

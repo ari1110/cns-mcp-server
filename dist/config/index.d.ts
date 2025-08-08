@@ -10,6 +10,9 @@ export declare const config: {
     };
     memory: {
         embedding_model: string;
+        embedding_provider?: string | undefined;
+        embedding_dimension?: number | undefined;
+        openai_api_key?: string | undefined;
     };
     orchestration: {
         max_concurrent_workflows: number;

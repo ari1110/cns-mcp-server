@@ -35,7 +35,7 @@ export class Database {
       );
       
       CREATE TABLE IF NOT EXISTS memories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT PRIMARY KEY,
         content TEXT,
         type TEXT,
         tags TEXT,

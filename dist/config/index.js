@@ -14,6 +14,9 @@ const configSchema = z.object({
     }),
     memory: z.object({
         embedding_model: z.string().min(1, 'Embedding model cannot be empty'),
+        embedding_provider: z.string().optional(),
+        embedding_dimension: z.number().int().positive().optional(),
+        openai_api_key: z.string().optional(),
     }),
     orchestration: z.object({
         max_concurrent_workflows: z.number().int().positive('Max workflows must be positive'),
@@ -40,6 +43,9 @@ function validateConfig() {
         },
         memory: {
             embedding_model: process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
+            embedding_provider: process.env.EMBEDDING_PROVIDER || 'none',
+            embedding_dimension: parseIntWithDefault(process.env.EMBEDDING_DIMENSION, 1536),
+            openai_api_key: process.env.OPENAI_API_KEY,
         },
         orchestration: {
             max_concurrent_workflows: parseIntWithDefault(process.env.MAX_WORKFLOWS, 10),
