@@ -4,7 +4,10 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 const packagePath = join(dirname(dirname(__dirname)), 'package.json');
 const pkg = JSON.parse(readFileSync(packagePath, 'utf-8'));
 
@@ -125,7 +128,7 @@ function initializeSystem() {
   console.log('3. Try /cns:status in a conversation');
 }
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   const command = args[0];
   
@@ -137,11 +140,14 @@ function main() {
       const verbose = args.includes('--verbose');
       validateSystem(verbose);
       break;
-    case 'start':
+    case 'start': {
       console.log('Starting CNS MCP Server...');
       // Import and start the MCP server
-      require('../index.js');
+      const { CNSMCPServer } = await import('../index.js');
+      const server = new CNSMCPServer();
+      await server.run();
       break;
+    }
     case '--version':
       console.log(`v${pkg.version}`);
       break;
@@ -156,6 +162,6 @@ function main() {
   }
 }
 
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   main();
 }
