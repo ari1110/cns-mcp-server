@@ -78,3 +78,6 @@ scripts/test-*.js
 
 # Package files (generated during build)
 dist-package/
+
+# Hide additional outputs
+cns.log
