@@ -4,9 +4,34 @@
 
 import { Database } from '../database/index.js';
 import { logger } from '../utils/logger.js';
+import { config } from '../config/index.js';
+import { CNSError } from '../utils/error-handler.js';
+import * as lancedb from '@lancedb/lancedb';
+
+interface MemoryRecord {
+  id: string;
+  content: string;
+  type: string;
+  tags: string[];
+  workflow_id?: string;
+  metadata: any;
+  embedding?: number[];
+  created_at: string;
+}
+
+interface EmbeddingProvider {
+  generateEmbedding(text: string): Promise<number[]>;
+}
 
 export class MemorySystem {
-  constructor(private db: Database) {}
+  private lanceDb: any;
+  private memoryTable: any;
+  private embeddingProvider: EmbeddingProvider | null = null;
+  private readonly embeddingDimension = 1536; // OpenAI text-embedding-3-small dimension
+
+  constructor(private db: Database) {
+    this.initializeLanceDB();
+  }
 
   async store(args: any) {
     logger.info('Storing memory', args);

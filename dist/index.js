@@ -13,6 +13,8 @@ import { OrchestrationEngine } from './orchestration/engine.js';
 import { logger } from './utils/logger.js';
 import { Database } from './database/index.js';
 import { config } from './config/index.js';
+import { CNSError, gracefulShutdown } from './utils/error-handler.js';
+import { healthMonitor } from './utils/health-monitor.js';
 export class CNSMCPServer {
     server;
     hookHandlers;
@@ -37,6 +39,7 @@ export class CNSMCPServer {
         this.orchestration = new OrchestrationEngine(this.db, this.memory, this.workspaces);
         this.hookHandlers = new HookHandlers(this.orchestration);
         this.setupHandlers();
+        this.setupHealthChecks();
     }
     setupHandlers() {
         // List available tools
@@ -185,10 +188,13 @@ export class CNSMCPServer {
                 // System Operations
                 {
                     name: 'get_system_status',
-                    description: 'Get comprehensive system status',
+                    description: 'Get comprehensive system status with health checks and metrics',
                     inputSchema: {
                         type: 'object',
-                        properties: {},
+                        properties: {
+                            include_metrics: { type: 'boolean', default: true },
+                            include_health_checks: { type: 'boolean', default: true },
+                        },
                     },
                 },
                 {
@@ -200,6 +206,14 @@ export class CNSMCPServer {
                             workflow_id: { type: 'string' },
                         },
                         required: ['workflow_id'],
+                    },
+                },
+                {
+                    name: 'get_system_health',
+                    description: 'Get detailed system health information',
+                    inputSchema: {
+                        type: 'object',
+                        properties: {},
                     },
                 },
             ],
@@ -230,6 +244,7 @@ export class CNSMCPServer {
         // Handle tool calls
         this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const { name, arguments: args } = request.params;
+            const startTime = Date.now();
             logger.info(`Tool called: ${name}`, { args });
             try {
                 // Validate args exist
@@ -263,26 +278,54 @@ export class CNSMCPServer {
                         return await this.workspaces.cleanup(args);
                     // System operations
                     case 'get_system_status':
-                        return await this.getSystemStatus();
+                        return await this.getSystemStatus(args);
                     case 'get_workflow_status':
                         return await this.orchestration.getWorkflowStatus(args.workflow_id);
+                    case 'get_system_health':
+                        return await this.getSystemHealth();
                     default:
                         throw new Error(`Unknown tool: ${name}`);
                 }
             }
             catch (error) {
-                logger.error(`Tool error: ${name}`, error);
+                const duration = Date.now() - startTime;
+                healthMonitor.recordError();
+                healthMonitor.recordResponseTime(duration);
+                logger.error(`Tool error: ${name}`, { tool: name, args, error, duration });
+                if (error instanceof CNSError) {
+                    return {
+                        content: [
+                            {
+                                type: 'text',
+                                text: JSON.stringify({
+                                    error: error.message,
+                                    code: error.code,
+                                    retryable: error.retryable,
+                                    tool: name,
+                                    context: error.context,
+                                }),
+                            },
+                        ],
+                    };
+                }
                 return {
                     content: [
                         {
                             type: 'text',
                             text: JSON.stringify({
                                 error: error instanceof Error ? error.message : 'Unknown error',
+                                code: 'TOOL_EXECUTION_ERROR',
+                                retryable: true,
                                 tool: name,
                             }),
                         },
                     ],
                 };
+            }
+            finally {
+                const duration = Date.now() - startTime;
+                healthMonitor.recordSuccess();
+                healthMonitor.recordResponseTime(duration);
             }
         });
         // Handle resource reads
@@ -324,13 +367,15 @@ export class CNSMCPServer {
             }
         });
     }
-    async getSystemStatus() {
+    async getSystemStatus(options = {}) {
+        const includeMetrics = options.include_metrics !== false;
+        const includeHealthChecks = options.include_health_checks !== false;
         const [memoryStats, workflowStats, workspaceStats] = await Promise.all([
             this.memory.getStats(),
             this.orchestration.getStats(),
             this.workspaces.getStats(),
         ]);
-        return {
+        const status = {
             status: 'operational',
             version: '1.0.0',
             uptime: process.uptime(),
@@ -339,17 +384,141 @@ export class CNSMCPServer {
             workspaces: workspaceStats,
             timestamp: new Date().toISOString(),
         };
+        if (includeMetrics) {
+            status.metrics = healthMonitor.getMetrics();
+        }
+        if (includeHealthChecks) {
+            status.health_checks = await healthMonitor.runAllHealthChecks();
+        }
+        return {
+            content: [
+                {
+                    type: 'text',
+                    text: JSON.stringify(status, null, 2),
+                },
+            ],
+        };
+    }
+    async getSystemHealth() {
+        const health = await healthMonitor.getSystemHealth();
+        return {
+            content: [
+                {
+                    type: 'text',
+                    text: JSON.stringify(health, null, 2),
+                },
+            ],
+        };
+    }
+    setupHealthChecks() {
+        // Database health check
+        healthMonitor.addHealthCheck('database', async () => {
+            try {
+                await this.db.get('SELECT 1');
+                return { status: 'healthy', message: 'Database connection successful' };
+            }
+            catch (error) {
+                return {
+                    status: 'unhealthy',
+                    message: 'Database connection failed',
+                    metadata: { error: error instanceof Error ? error.message : error }
+                };
+            }
+        });
+        // Memory system health check
+        healthMonitor.addHealthCheck('memory_system', async () => {
+            try {
+                const stats = await this.memory.getStats();
+                return {
+                    status: 'healthy',
+                    message: 'Memory system operational',
+                    metadata: { total_memories: stats.total_memories }
+                };
+            }
+            catch (error) {
+                return {
+                    status: 'unhealthy',
+                    message: 'Memory system check failed',
+                    metadata: { error: error instanceof Error ? error.message : error }
+                };
+            }
+        });
+        // Orchestration engine health check
+        healthMonitor.addHealthCheck('orchestration', async () => {
+            try {
+                const stats = await this.orchestration.getStats();
+                const hasHighWorkflowCount = stats.workflows > 100;
+                return {
+                    status: hasHighWorkflowCount ? 'degraded' : 'healthy',
+                    message: hasHighWorkflowCount
+                        ? 'High workflow count detected'
+                        : 'Orchestration engine operational',
+                    metadata: stats
+                };
+            }
+            catch (error) {
+                return {
+                    status: 'unhealthy',
+                    message: 'Orchestration engine check failed',
+                    metadata: { error: error instanceof Error ? error.message : error }
+                };
+            }
+        });
+        // Workspace manager health check
+        healthMonitor.addHealthCheck('workspaces', async () => {
+            try {
+                const stats = await this.workspaces.getStats();
+                return {
+                    status: 'healthy',
+                    message: 'Workspace manager operational',
+                    metadata: stats
+                };
+            }
+            catch (error) {
+                return {
+                    status: 'unhealthy',
+                    message: 'Workspace manager check failed',
+                    metadata: { error: error instanceof Error ? error.message : error }
+                };
+            }
+        });
     }
     async run() {
         logger.info('Starting CNS MCP Server...');
-        // Initialize database
-        await this.db.initialize();
-        // Start orchestration engine
-        await this.orchestration.start();
-        // Connect to stdio transport
-        const transport = new StdioServerTransport();
-        await this.server.connect(transport);
-        logger.info('CNS MCP Server running on stdio');
+        try {
+            // Initialize database
+            await this.db.initialize();
+            logger.info('Database initialized successfully');
+            // Start orchestration engine
+            await this.orchestration.start();
+            logger.info('Orchestration engine started successfully');
+            // Connect to stdio transport
+            const transport = new StdioServerTransport();
+            await this.server.connect(transport);
+            logger.info('CNS MCP Server running on stdio');
+            // Setup graceful shutdown
+            this.setupGracefulShutdown();
+        }
+        catch (error) {
+            logger.error('Failed to start CNS MCP Server', { error });
+            throw error;
+        }
+    }
+    setupGracefulShutdown() {
+        gracefulShutdown(async () => {
+            logger.info('Shutting down CNS MCP Server...');
+            // Stop orchestration engine
+            if (this.orchestration) {
+                await this.orchestration.stop();
+                logger.info('Orchestration engine stopped');
+            }
+            // Close database connections if method exists
+            if (this.db && typeof this.db.close === 'function') {
+                await this.db.close();
+                logger.info('Database connections closed');
+            }
+            logger.info('CNS MCP Server shutdown complete');
+        });
     }
 }
 // Create and run the server

@@ -13,6 +13,9 @@ export declare class CNSMCPServer {
     constructor();
     private setupHandlers;
     private getSystemStatus;
+    private getSystemHealth;
+    private setupHealthChecks;
     run(): Promise<void>;
+    private setupGracefulShutdown;
 }
 //# sourceMappingURL=index.d.ts.map

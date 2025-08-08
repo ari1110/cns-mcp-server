@@ -11,3 +11,16 @@
 {"level":"info","message":"Loaded 0 workflows from database","timestamp":"2025-08-08T04:58:33.401Z"}
 {"level":"info","message":"CNS MCP Server running on stdio","timestamp":"2025-08-08T04:58:33.414Z"}
 {"args":{},"level":"info","message":"Tool called: get_system_status","timestamp":"2025-08-08T04:58:33.421Z"}
+{"database_path":"./cns.db","level":"info","log_level":"info","max_workflows":10,"message":"Configuration validated successfully","timestamp":"2025-08-08T05:34:26.026Z","workspaces_dir":"/tmp/cns-workspaces"}
+{"level":"info","message":"Added health check: database","timestamp":"2025-08-08T05:34:26.033Z"}
+{"level":"info","message":"Added health check: memory_system","timestamp":"2025-08-08T05:34:26.033Z"}
+{"level":"info","message":"Added health check: orchestration","timestamp":"2025-08-08T05:34:26.033Z"}
+{"level":"info","message":"Added health check: workspaces","timestamp":"2025-08-08T05:34:26.033Z"}
+{"level":"info","message":"Starting CNS MCP Server...","timestamp":"2025-08-08T05:34:26.034Z"}
+{"level":"info","message":"Initializing database","timestamp":"2025-08-08T05:34:26.034Z"}
+{"level":"info","message":"Database initialized","timestamp":"2025-08-08T05:34:26.034Z"}
+{"level":"info","message":"Database initialized successfully","timestamp":"2025-08-08T05:34:26.035Z"}
+{"level":"info","message":"Starting orchestration engine","timestamp":"2025-08-08T05:34:26.035Z"}
+{"level":"info","message":"Loaded 0 workflows from database","timestamp":"2025-08-08T05:34:26.035Z"}
+{"level":"info","message":"Orchestration engine started successfully","timestamp":"2025-08-08T05:34:26.047Z"}
+{"level":"info","message":"CNS MCP Server running on stdio","timestamp":"2025-08-08T05:34:26.048Z"}

@@ -7,6 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { logger } from '../utils/logger.js';
 // import { spawn } from 'child_process'; // Not used in this implementation
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,7 +39,7 @@ export class CNSClient {
             return response;
         }
         catch (error) {
-            console.error(`CNS Client error calling ${toolName}:`, error);
+            logger.error(`CNS Client error calling ${toolName}`, { toolName, error });
             throw error;
         }
     }
@@ -50,7 +51,7 @@ export class CNSClient {
 async function main() {
     const toolName = process.argv[2];
     if (!toolName) {
-        console.error('Usage: cns-client <tool_name>');
+        logger.error('Usage: cns-client <tool_name>');
         process.exit(1);
     }
     let inputData;
@@ -59,17 +60,18 @@ async function main() {
         inputData = JSON.parse(await readStdin());
     }
     catch (error) {
-        console.error('Failed to parse input JSON:', error);
+        logger.error('Failed to parse input JSON', { error });
         process.exit(1);
     }
     const client = new CNSClient();
     try {
         await client.connect();
         const result = await client.callTool(toolName, inputData);
+        // Use console.log for output as this is expected by calling scripts
         console.log(JSON.stringify(result, null, 2));
     }
     catch (error) {
-        console.error('CNS Client error:', error);
+        logger.error('CNS Client error', { toolName, error });
         process.exit(1);
     }
     finally {
@@ -91,6 +93,9 @@ function readStdin() {
     });
 }
 if (import.meta.url === `file://${process.argv[1]}`) {
-    main().catch(console.error);
+    main().catch((error) => {
+        logger.error('CNS Client fatal error', { error });
+        process.exit(1);
+    });
 }
 //# sourceMappingURL=index.js.map

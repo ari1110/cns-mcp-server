@@ -3,6 +3,7 @@
  */
 export declare class WorkspaceManager {
     private workspacesDir;
+    private git;
     constructor(config: any);
     create(args: {
         agent_id: string;
@@ -24,8 +25,33 @@ export declare class WorkspaceManager {
         }[];
     }>;
     getStats(): Promise<{
-        active_workspaces: number;
+        active_worktrees: number;
+        local_workspaces: number;
         total_disk_usage: string;
+        workspaces_dir: string;
+        worktrees: {
+            path: any;
+            branch: any;
+            commit: any;
+        }[];
+        error?: undefined;
+    } | {
+        active_worktrees: number;
+        local_workspaces: number;
+        total_disk_usage: string;
+        error: string;
+        workspaces_dir?: undefined;
+        worktrees?: undefined;
     }>;
+    private validateGitRepository;
+    private ensureWorkspacesDirectory;
+    private forceCleanupWorkspace;
+    private parseWorktreeList;
+    private calculateDiskUsage;
+    private calculateDirectorySize;
+    private formatBytes;
+    private sanitizePathComponent;
+    private validateBaseRef;
+    private verifyWorkspaceCreated;
 }
 //# sourceMappingURL=index.d.ts.map
