@@ -1,0 +1,61 @@
+# Source files (only distribute compiled JS)
+src/
+*.ts
+!*.d.ts
+
+# Development files
+tests/
+*.test.js
+*.test.ts
+vitest.config.ts
+tsconfig.json
+
+# Build artifacts
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Database files (user data, not package data)
+*.db
+*.db-*
+cns.log
+logs/
+
+# Cache directories
+.npm/
+.cache/
+models/
+data/lancedb/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Development documentation (not for package users)
+PRODUCTION-*.md
+CLAUDE.md
+scripts/
+test-*.sh
+test-*.js
+
+# Git files
+.git/
+.gitignore
+
+# Temporary files
+tmp/
+temp/
+*.tmp

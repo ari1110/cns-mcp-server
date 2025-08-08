@@ -33,6 +33,22 @@ export declare class MockEmbeddingProvider implements EmbeddingProvider {
     private simpleHash;
 }
 /**
+ * Transformers.js Embedding Provider
+ * Uses local models for free, offline embeddings
+ */
+export declare class TransformersEmbeddingProvider implements EmbeddingProvider {
+    private pipeline;
+    private model;
+    private dimension;
+    private initPromise;
+    constructor(model?: string, dimension?: number);
+    private initialize;
+    private _doInitialize;
+    getDimension(): number;
+    getName(): string;
+    generateEmbedding(text: string): Promise<number[]>;
+}
+/**
  * Factory function to create embedding provider based on configuration
  */
 export declare function createEmbeddingProvider(config: any): EmbeddingProvider | null;

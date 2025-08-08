@@ -1,171 +1,110 @@
-# CNS (Central Nervous System) MCP Server
+# CNS MCP Server
 
-The **first autonomous multi-agent orchestration system** specifically designed for Claude Code.
+**Autonomous Multi-Agent Orchestration for Claude Code**
 
-## 🚀 What We Built
+[![NPM Version](https://img.shields.io/npm/v/cns-mcp-server.svg)](https://www.npmjs.com/package/cns-mcp-server)
+[![Node Version](https://img.shields.io/node/v/cns-mcp-server.svg)](https://nodejs.org/)
+[![License](https://img.shields.io/npm/l/cns-mcp-server.svg)](https://github.com/your-org/cns-mcp-server/blob/main/LICENSE)
 
-CNS fills critical gaps that **NO existing solution addresses**:
+Transform Claude Code from a single agent into an **autonomous multi-agent system** that orchestrates complex workflows automatically.
 
-- ✅ **Native Claude Code Integration** - Direct Task tool launching (industry first)
-- ✅ **Git Worktree Isolation** - Parallel agent workspaces (novel approach)
-- ✅ **Autonomous Review Cycles** - Zero-intervention manager-associate patterns
-- ✅ **Hybrid Memory System** - Semantic + episodic + decision history
-- ✅ **Event-Driven Architecture** - Hook-based real-time orchestration
-- ✅ **Thin Hook Pattern** - Replace heavy bash scripts with 2-line wrappers
+## 🚀 Quick Start
 
-## 📊 Before vs After
-
-| Aspect | Before (Fresh Extractions) | After (CNS) |
-|--------|----------------------------|-------------|
-| **Hook Files** | 150+ lines bash each | 2 lines each |
-| **Logic Location** | Scattered in `.claude/` | Centralized in CNS |
-| **Reusability** | Project-specific | Works for any Claude project |
-| **Memory** | Files and logs | Proper database with semantic search |
-| **Orchestration** | Manual coordination | Fully autonomous |
-| **Testing** | Hard to test bash | Easy to test TypeScript |
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                Fresh Extractions                        │
-│  .claude/hooks/SubagentStop.sh (2 lines!)              │
-└─────────────────────┬───────────────────────────────────┘
-                      │ npx cns-client
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│                 CNS MCP Server                          │
-├─────────────────────────────────────────────────────────┤
-│  🧠 Memory System (semantic search, embeddings)        │
-│  🔄 Orchestration Engine (workflows, handoffs)         │
-│  🏗️ Workspace Manager (git worktrees)                  │
-│  🎯 Hook Handlers (all logic from bash scripts)        │
-│  ✅ Quality Assurance (autonomous reviews)             │
-└─────────────────────────────────────────────────────────┘
-```
-
-## 🎯 Autonomous Workflow
-
-```
-User: "Implement feature X"
-    ↓
-Claude: Launches manager agents
-    ↓
-Manager completes → CNS detects "Task Assignment"
-    ↓
-CNS auto-launches associates (NO MANUAL INTERVENTION)
-    ↓
-Associate completes → CNS detects "Implementation Complete"
-    ↓
-CNS auto-launches manager review
-    ↓
-Manager approves → CNS signals "Ready for Integration"
-    ↓
-Claude: Final integration
-```
-
-## 🛠️ Quick Start
-
-### 1. Install Dependencies
 ```bash
-cd ~/projects/cns-mcp-server
-npm install
+# Install globally
+npm install -g cns-mcp-server
+
+# Initialize system  
+cns-server init
+
+# Add to Claude Code (copy the configuration shown)
 ```
 
-### 2. Build the Server
+**That's it!** CNS is now orchestrating your Claude Code workflows.
+
+## ✨ What You Get
+
+### 🤖 Autonomous Agent Orchestration
+- **Managers** create specifications → **CNS detects patterns** → **Associates** implement → **Managers** review
+- **Zero manual intervention** - workflows happen automatically
+- **Pattern recognition** detects "Task Assignment", "Implementation Complete", "Approved for Integration"
+
+### 🧠 Free Semantic Memory
+- **Zero API costs** - uses Transformers.js locally
+- **Hybrid search** - semantic + text matching  
+- **384-dimensional embeddings** with automatic storage
+
+### 🏗️ Workspace Isolation
+- **Git worktrees** for parallel development
+- **Branch-based isolation** per workflow
+- **Automatic cleanup** after completion
+
+### 🎛️ Slash Commands
+Direct control in Claude Code conversations:
+- `/cns:status` - System overview
+- `/cns:health` - Health diagnostics  
+- `/cns:workflows` - Active workflows
+- `/cns:search <query>` - Memory search
+- `/cns:memories` - Recent memories
+- `/cns:help` - Usage guide
+
+## 📋 Installation
+
+See **[INSTALLATION.md](./INSTALLATION.md)** for detailed setup instructions.
+
+## 📚 Documentation
+
+- **[Installation Guide](./INSTALLATION.md)** - Setup and configuration
+- **[User Guide](./USER-GUIDE.md)** - Workflow examples and best practices  
+- **[Troubleshooting](./TROUBLESHOOTING.md)** - Common issues and solutions
+
+## 🎯 Example: Authentication System
+
+**You ask:**
+> "Please implement a user authentication system"
+
+**CNS orchestrates automatically:**
+
+1. **Manager** creates specifications with JWT, bcrypt, session management
+2. **CNS detects** "Task Assignment" → auto-launches Associate  
+3. **Associate** implements complete auth system with tests
+4. **CNS detects** "Implementation Complete" → auto-launches Manager review
+5. **Manager** approves with "Approved for Integration"
+6. **CNS** completes workflow, stores knowledge, cleans workspace
+
+**Result:** Production-ready authentication system delivered through autonomous agent coordination.
+
+## 🔧 Requirements
+
+- **Node.js:** 18.0.0 or higher
+- **RAM:** 2GB available memory
+- **Storage:** 500MB for models and data
+- **OS:** Windows, macOS, or Linux
+
+## 🏥 Health Check
+
 ```bash
-npm run build
+cns-server validate
 ```
 
-### 3. Update Fresh Extractions Hooks
-```bash
-# Replace heavy bash scripts with thin wrappers
-mv .claude/hooks .claude/hooks-old
-mv .claude/hooks-new .claude/hooks
-chmod +x .claude/hooks/*.sh
+Expected output:
+```
+🔍 Validating CNS MCP Server Configuration...
+✓ Configuration file exists
+✓ Using free local Transformers.js embeddings  
+✅ Validation complete!
 ```
 
-### 4. Configure Claude Code
-Add to your Claude Code settings:
-```json
-{
-  "mcpServers": {
-    "cns": {
-      "command": "node",
-      "args": ["/home/ari1110/projects/cns-mcp-server/dist/index.js"]
-    }
-  }
-}
-```
+## 📞 Support
 
-### 5. Test the System
-```bash
-# In Claude Code, try:
-mcp__cns__get_system_status()
-```
+- **Issues:** [GitHub Issues](https://github.com/your-org/cns-mcp-server/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/your-org/cns-mcp-server/discussions)
+- **Documentation:** [GitHub Wiki](https://github.com/your-org/cns-mcp-server/wiki)
 
-## 🔧 MCP Tools Exposed
+## 📄 License
 
-### Hook Handlers (replaces bash scripts)
-- `handle_subagent_stop` - Process agent completions and trigger workflows
-- `handle_pre_tool_use` - Monitor tool usage and create contexts
-- `handle_session_start` - Initialize orchestration on session start
+MIT - see [LICENSE](./LICENSE) file.
 
-### Memory Operations
-- `store_memory` - Store with semantic search
-- `retrieve_memory` - Query with embeddings
+---
 
-### Orchestration Operations  
-- `launch_agent` - Start agents with specifications
-- `get_pending_tasks` - View orchestration queue
-- `signal_completion` - Mark task completion
-
-### Workspace Management
-- `create_workspace` - Isolated git worktrees
-- `cleanup_workspace` - Automatic cleanup
-
-### System Operations
-- `get_system_status` - Health monitoring
-- `get_workflow_status` - Track workflows
-
-## 📈 Research Validation
-
-We researched **all major orchestration frameworks**:
-
-| Framework | Claude Integration | Git Workspaces | Autonomous Reviews | CNS |
-|-----------|-------------------|----------------|--------------------|-----|
-| AutoGen | ❌ | ❌ | Partial | ✅ |
-| CrewAI | ❌ | ❌ | Partial | ✅ |
-| LangGraph | ❌ | ❌ | ❌ | ✅ |
-| **CNS** | ✅ | ✅ | ✅ | ✅ |
-
-**Result: CNS is the ONLY solution that provides all features together.**
-
-## 🎉 What We Achieved
-
-Starting from scattered bash scripts in Fresh Extractions, we built:
-
-1. **First-of-its-kind** autonomous orchestration for Claude Code
-2. **Production-ready** MCP server with proper TypeScript architecture  
-3. **Research-validated** solution filling gaps no existing tool addresses
-4. **Reusable system** that works for ANY Claude Code project
-5. **Complete migration** from heavy bash scripts to elegant MCP tools
-
-## 🚀 Next Steps
-
-- [ ] Install and test the system
-- [ ] Add vector embeddings for semantic memory
-- [ ] Implement full workspace management
-- [ ] Add monitoring and metrics
-- [ ] Open source for community use
-
-## 📝 Migration Summary
-
-From Fresh Extractions `.claude/` folder:
-- **Migrated**: All hook logic → CNS MCP tools
-- **Migrated**: Event processing → Orchestration engine  
-- **Migrated**: Workspace management → CNS workspace manager
-- **Replaced**: 150+ line bash scripts → 2-line wrappers
-- **Added**: Proper database, memory system, TypeScript architecture
-
-**Result: Clean project with powerful autonomous orchestration!**
+**Ready to transform your development workflow? Install CNS and watch autonomous agent orchestration in action! 🚀**

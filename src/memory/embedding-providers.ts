@@ -4,6 +4,9 @@
 
 import { logger } from '../utils/logger.js';
 import { CNSError } from '../utils/error-handler.js';
+import { pipeline, env } from '@xenova/transformers';
+import { homedir } from 'os';
+import { join } from 'path';
 
 export interface EmbeddingProvider {
   generateEmbedding(text: string): Promise<number[]>;
@@ -151,34 +154,157 @@ export class MockEmbeddingProvider implements EmbeddingProvider {
 }
 
 /**
+ * Transformers.js Embedding Provider
+ * Uses local models for free, offline embeddings
+ */
+export class TransformersEmbeddingProvider implements EmbeddingProvider {
+  private pipeline: any = null;
+  private model: string;
+  private dimension: number;
+  private initPromise: Promise<void> | null = null;
+
+  constructor(
+    model = 'Xenova/all-MiniLM-L6-v2',
+    dimension = 384
+  ) {
+    this.model = model;
+    this.dimension = dimension;
+    
+    // Set model cache directory to ~/.cns/models/
+    const cnsDir = join(homedir(), '.cns', 'models');
+    env.cacheDir = cnsDir;
+    
+    logger.info('Transformers.js embedding provider initialized', {
+      model: this.model,
+      dimension: this.dimension,
+      cachePath: cnsDir
+    });
+  }
+
+  private async initialize() {
+    if (this.pipeline) return;
+    
+    if (!this.initPromise) {
+      this.initPromise = this._doInitialize();
+    }
+    
+    await this.initPromise;
+  }
+
+  private async _doInitialize() {
+    try {
+      logger.info('Loading Transformers.js model...', { model: this.model });
+      
+      // Create the pipeline - model will be downloaded on first use
+      this.pipeline = await pipeline('feature-extraction', this.model, {
+        quantized: true, // Use quantized model for smaller size and faster inference
+      });
+      
+      logger.info('Transformers.js model loaded successfully', { model: this.model });
+    } catch (error) {
+      logger.error('Failed to load Transformers.js model', { 
+        model: this.model, 
+        error: error instanceof Error ? error.message : error 
+      });
+      throw new CNSError(
+        'Failed to initialize Transformers.js model',
+        'TRANSFORMERS_INIT_ERROR',
+        { model: this.model, error: error instanceof Error ? error.message : error }
+      );
+    }
+  }
+
+  getDimension(): number {
+    return this.dimension;
+  }
+
+  getName(): string {
+    return `Transformers-${this.model.split('/').pop()}`;
+  }
+
+  async generateEmbedding(text: string): Promise<number[]> {
+    if (!text.trim()) {
+      throw new CNSError('Text cannot be empty for embedding generation', 'EMPTY_TEXT', {}, false);
+    }
+
+    await this.initialize();
+
+    try {
+      // Generate embeddings using the pipeline
+      const output = await this.pipeline(text, {
+        pooling: 'mean',
+        normalize: true
+      });
+      
+      // Convert tensor to array
+      const embedding = Array.from(output.data as Float32Array);
+      
+      if (embedding.length !== this.dimension) {
+        logger.warn(`Expected dimension ${this.dimension}, got ${embedding.length}. Using actual dimension.`);
+      }
+      
+      logger.debug('Generated embedding via Transformers.js', { 
+        model: this.model, 
+        textLength: text.length, 
+        embeddingDimension: embedding.length 
+      });
+
+      return embedding;
+
+    } catch (error) {
+      logger.error('Failed to generate embedding via Transformers.js', { 
+        error, 
+        textPreview: text.substring(0, 100) 
+      });
+      throw new CNSError(
+        'Transformers.js embedding generation failed',
+        'TRANSFORMERS_EMBEDDING_ERROR',
+        { error: error instanceof Error ? error.message : error },
+        true // Retryable
+      );
+    }
+  }
+}
+
+/**
  * Factory function to create embedding provider based on configuration
  */
 export function createEmbeddingProvider(config: any): EmbeddingProvider | null {
-  const providerType = config.embedding_provider || process.env.EMBEDDING_PROVIDER || 'none';
+  const providerType = config.embedding_provider || process.env.EMBEDDING_PROVIDER || 'transformers';
   
   switch (providerType.toLowerCase()) {
+    case 'transformers':
+      logger.info('Using Transformers.js embedding provider (free, local)');
+      return new TransformersEmbeddingProvider(
+        config.embedding_model || process.env.EMBEDDING_MODEL || 'Xenova/all-MiniLM-L6-v2',
+        config.embedding_dimension || parseInt(process.env.EMBEDDING_DIMENSION || '384')
+      );
+      
     case 'openai':
       const apiKey = config.openai_api_key || process.env.OPENAI_API_KEY;
       if (!apiKey) {
-        logger.warn('OpenAI API key not found, embedding generation disabled');
-        return null;
+        logger.warn('OpenAI API key not found, falling back to Transformers.js');
+        return new TransformersEmbeddingProvider();
       }
       
       return new OpenAIEmbeddingProvider(
         apiKey,
-        config.embedding_model || process.env.EMBEDDING_MODEL,
+        config.embedding_model || process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
         config.embedding_dimension || parseInt(process.env.EMBEDDING_DIMENSION || '1536')
       );
       
     case 'mock':
       logger.info('Using mock embedding provider for development/testing');
       return new MockEmbeddingProvider(
-        config.embedding_dimension || parseInt(process.env.EMBEDDING_DIMENSION || '1536')
+        config.embedding_dimension || parseInt(process.env.EMBEDDING_DIMENSION || '384')
       );
       
     case 'none':
-    default:
       logger.info('No embedding provider configured, semantic search disabled');
       return null;
+      
+    default:
+      logger.info('Unknown provider type, using Transformers.js as default');
+      return new TransformersEmbeddingProvider();
   }
 }

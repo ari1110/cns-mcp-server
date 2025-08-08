@@ -15,6 +15,9 @@ import { Database } from './database/index.js';
 import { config } from './config/index.js';
 import { CNSError, gracefulShutdown } from './utils/error-handler.js';
 import { healthMonitor } from './utils/health-monitor.js';
+import { CNSCommands } from './commands/index.js';
+import { mkdir } from 'fs/promises';
+import { dirname } from 'path';
 export class CNSMCPServer {
     server;
     hookHandlers;
@@ -22,6 +25,7 @@ export class CNSMCPServer {
     workspaces;
     orchestration;
     db;
+    commands;
     constructor() {
         this.server = new Server({
             name: 'cns-mcp-server',
@@ -38,6 +42,7 @@ export class CNSMCPServer {
         this.workspaces = new WorkspaceManager(config.workspaces);
         this.orchestration = new OrchestrationEngine(this.db, this.memory, this.workspaces);
         this.hookHandlers = new HookHandlers(this.orchestration);
+        this.commands = new CNSCommands(this.db, this.memory, this.workspaces);
         this.setupHandlers();
         this.setupHealthChecks();
     }
@@ -222,11 +227,26 @@ export class CNSMCPServer {
                         properties: {},
                     },
                 },
+                {
+                    name: 'validate_embedding_provider',
+                    description: 'Test and validate the embedding provider configuration',
+                    inputSchema: {
+                        type: 'object',
+                        properties: {
+                            test_text: {
+                                type: 'string',
+                                default: 'Test embedding generation',
+                                description: 'Text to use for embedding test'
+                            }
+                        },
+                    },
+                },
             ],
         }));
         // List available resources
         this.server.setRequestHandler(ListResourcesRequestSchema, async () => ({
             resources: [
+                // Legacy JSON resources
                 {
                     uri: 'cns://status',
                     name: 'System Status',
@@ -244,6 +264,49 @@ export class CNSMCPServer {
                     name: 'Memory Statistics',
                     description: 'Memory system statistics',
                     mimeType: 'application/json',
+                },
+                // Slash Commands (appear as /cns:command in Claude Code)
+                {
+                    uri: 'cns:status',
+                    name: '/cns:status',
+                    description: '🚀 Quick system overview with active workflows',
+                    mimeType: 'text/markdown',
+                },
+                {
+                    uri: 'cns:health',
+                    name: '/cns:health',
+                    description: '🏥 Detailed health check and system diagnostics',
+                    mimeType: 'text/markdown',
+                },
+                {
+                    uri: 'cns:workflows',
+                    name: '/cns:workflows',
+                    description: '🔄 View all active workflows and pending tasks',
+                    mimeType: 'text/markdown',
+                },
+                {
+                    uri: 'cns:search',
+                    name: '/cns:search',
+                    description: '🔍 Search memories using semantic + text search',
+                    mimeType: 'text/markdown',
+                },
+                {
+                    uri: 'cns:memories',
+                    name: '/cns:memories',
+                    description: '🧠 View recent memories and system statistics',
+                    mimeType: 'text/markdown',
+                },
+                {
+                    uri: 'cns:help',
+                    name: '/cns:help',
+                    description: '📚 Available CNS commands and usage guide',
+                    mimeType: 'text/markdown',
+                },
+                {
+                    uri: 'cns:about',
+                    name: '/cns:about',
+                    description: 'ℹ️ CNS version and system information',
+                    mimeType: 'text/markdown',
                 },
             ],
         }));
@@ -289,6 +352,8 @@ export class CNSMCPServer {
                         return await this.orchestration.getWorkflowStatus(args.workflow_id);
                     case 'get_system_health':
                         return await this.getSystemHealth();
+                    case 'validate_embedding_provider':
+                        return await this.validateEmbeddingProvider(args);
                     default:
                         throw new Error(`Unknown tool: ${name}`);
                 }
@@ -368,7 +433,80 @@ export class CNSMCPServer {
                             },
                         ],
                     };
+                // Slash Commands - /cns:command
+                case 'cns:status': {
+                    const result = await this.commands.getStatus();
+                    return {
+                        contents: [{
+                                uri,
+                                mimeType: result.mimeType || 'text/markdown',
+                                text: result.content,
+                            }],
+                    };
+                }
+                case 'cns:health': {
+                    const result = await this.commands.getHealth();
+                    return {
+                        contents: [{
+                                uri,
+                                mimeType: result.mimeType || 'text/markdown',
+                                text: result.content,
+                            }],
+                    };
+                }
+                case 'cns:workflows': {
+                    const result = await this.commands.getWorkflows();
+                    return {
+                        contents: [{
+                                uri,
+                                mimeType: result.mimeType || 'text/markdown',
+                                text: result.content,
+                            }],
+                    };
+                }
+                case 'cns:memories': {
+                    const result = await this.commands.getMemories();
+                    return {
+                        contents: [{
+                                uri,
+                                mimeType: result.mimeType || 'text/markdown',
+                                text: result.content,
+                            }],
+                    };
+                }
+                case 'cns:help': {
+                    const result = await this.commands.getHelp();
+                    return {
+                        contents: [{
+                                uri,
+                                mimeType: result.mimeType || 'text/markdown',
+                                text: result.content,
+                            }],
+                    };
+                }
+                case 'cns:about': {
+                    const result = await this.commands.getAbout();
+                    return {
+                        contents: [{
+                                uri,
+                                mimeType: result.mimeType || 'text/markdown',
+                                text: result.content,
+                            }],
+                    };
+                }
                 default:
+                    // Handle parameterized commands like /cns:search <query>
+                    if (uri.startsWith('cns:search')) {
+                        const query = uri.replace('cns:search', '').replace(/^[:\s]+/, '').trim();
+                        const result = await this.commands.searchMemories(query);
+                        return {
+                            contents: [{
+                                    uri,
+                                    mimeType: result.mimeType || 'text/markdown',
+                                    text: result.content,
+                                }],
+                        };
+                    }
                     throw new Error(`Unknown resource: ${uri}`);
             }
         });
@@ -489,9 +627,32 @@ export class CNSMCPServer {
             }
         });
     }
+    async ensureDirectoryStructure() {
+        // Create CNS directories automatically for download-and-go experience
+        const dirsToCreate = [
+            dirname(config.database.path), // ~/.cns/data/
+            config.workspaces.workspaces_dir, // ~/.cns/workspaces/
+            dirname(config.logging.file), // ~/.cns/logs/
+            dirname(config.logging.file.replace('logs', 'models')) // ~/.cns/models/
+        ];
+        for (const dir of dirsToCreate) {
+            try {
+                await mkdir(dir, { recursive: true });
+            }
+            catch (error) {
+                // Ignore if directory already exists
+                if (error.code !== 'EEXIST') {
+                    logger.warn(`Failed to create directory ${dir}:`, error);
+                }
+            }
+        }
+        logger.info('Directory structure ensured');
+    }
     async run() {
         logger.info('Starting CNS MCP Server...');
         try {
+            // Auto-create CNS directory structure (download-and-go)
+            await this.ensureDirectoryStructure();
             // Initialize database
             await this.db.initialize();
             logger.info('Database initialized successfully');
@@ -508,6 +669,60 @@ export class CNSMCPServer {
         catch (error) {
             logger.error('Failed to start CNS MCP Server', { error });
             throw error;
+        }
+    }
+    async validateEmbeddingProvider(args) {
+        const testText = args.test_text || 'Test embedding generation for validation';
+        try {
+            const provider = this.memory.getEmbeddingProvider();
+            if (!provider) {
+                return {
+                    content: [{
+                            type: 'text',
+                            text: JSON.stringify({
+                                status: 'no_provider',
+                                message: 'No embedding provider configured',
+                                recommendation: 'Set EMBEDDING_PROVIDER=transformers for free local embeddings'
+                            })
+                        }]
+                };
+            }
+            logger.info('Validating embedding provider', {
+                provider: provider.getName(),
+                testText: testText.substring(0, 50)
+            });
+            const startTime = Date.now();
+            const embedding = await provider.generateEmbedding(testText);
+            const duration = Date.now() - startTime;
+            return {
+                content: [{
+                        type: 'text',
+                        text: JSON.stringify({
+                            status: 'success',
+                            provider: provider.getName(),
+                            dimension: provider.getDimension(),
+                            generation_time_ms: duration,
+                            embedding_sample: embedding.slice(0, 5).map(v => v.toFixed(4)),
+                            test_text: testText,
+                            message: `Embedding provider is working correctly`
+                        })
+                    }]
+            };
+        }
+        catch (error) {
+            logger.error('Embedding provider validation failed', { error });
+            return {
+                content: [{
+                        type: 'text',
+                        text: JSON.stringify({
+                            status: 'error',
+                            error: error instanceof Error ? error.message : 'Unknown error',
+                            recommendation: error instanceof Error && error.message.includes('OpenAI')
+                                ? 'Check OPENAI_API_KEY or switch to EMBEDDING_PROVIDER=transformers'
+                                : 'Check embedding provider configuration'
+                        })
+                    }]
+            };
         }
     }
     setupGracefulShutdown() {

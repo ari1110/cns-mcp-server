@@ -8,11 +8,50 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { createRequire } from 'module';
+import { access, constants } from 'fs/promises';
 import { logger } from '../utils/logger.js';
-// import { spawn } from 'child_process'; // Not used in this implementation
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const require = createRequire(import.meta.url);
+
+async function findServerPath(): Promise<string> {
+  // Option 1: Environment variable (allows user override)
+  if (process.env.CNS_SERVER_PATH) {
+    return process.env.CNS_SERVER_PATH;
+  }
+
+  // Option 2: Try package.json resolution (works for npm installs)
+  try {
+    const packageServerPath = require.resolve('cns-mcp-server/dist/index.js');
+    await access(packageServerPath, constants.F_OK);
+    return packageServerPath;
+  } catch {
+    // Package resolution failed, try other methods
+  }
+
+  // Option 3: Relative to this file (works for source builds and development)
+  const candidates = [
+    join(__dirname, '..', 'index.js'),                     // Same level
+    join(__dirname, '..', '..', 'dist', 'index.js'),       // Built distribution  
+    join(__dirname, '..', '..', 'src', 'index.js'),        // Source (development)
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      await access(candidate, constants.F_OK);
+      return candidate;
+    } catch {
+      // Try next candidate
+    }
+  }
+
+  throw new Error(
+    'CNS server not found. Please ensure cns-mcp-server is properly installed, ' +
+    'or set CNS_SERVER_PATH environment variable to the server location.'
+  );
+}
 
 export class CNSClient {
   private client: Client;
@@ -32,9 +71,11 @@ export class CNSClient {
 
   async connect() {
     // Create transport to communicate with CNS MCP Server
+    const serverPath = await findServerPath();
+    
     this.transport = new StdioClientTransport({
       command: 'node',
-      args: [join(__dirname, '../index.js')],
+      args: [serverPath],
     });
 
     await this.client.connect(this.transport);

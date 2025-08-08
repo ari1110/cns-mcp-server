@@ -19,15 +19,28 @@ describe('Memory System Tests', () => {
     } catch {
       // Database doesn't exist
     }
+    
+    // Clean up LanceDB data
+    try {
+      await rm('./data/lancedb', { recursive: true });
+    } catch {
+      // Directory doesn't exist
+    }
 
     // Initialize fresh database and memory system
     database = new Database({ path: './test-cns.db' });
     await database.initialize();
     memorySystem = new MemorySystem(database);
+    
+    // Give time for embedding provider to initialize
+    await new Promise(resolve => setTimeout(resolve, 100));
   });
 
   describe('Basic Storage and Retrieval', () => {
     test('should store memory successfully', async () => {
+      // Disable embedding provider for this test to test basic storage
+      memorySystem.setEmbeddingProvider(null as any);
+      
       const result = await memorySystem.store({
         content: 'This is a test memory about machine learning algorithms',
         type: 'knowledge',
@@ -41,10 +54,13 @@ describe('Memory System Tests', () => {
       expect(response.status).toBe('stored');
       expect(response.id).toMatch(/^memory_\d+_[a-z0-9]+$/);
       expect(response.content_preview).toBe('This is a test memory about machine learning algorithms');
-      expect(response.vector_stored).toBe(false); // No embedding provider configured
+      expect(response.vector_stored).toBe(false); // No embedding provider set for this test
     });
 
     test('should retrieve memories using text search', async () => {
+      // Disable embedding provider for this test to test text-only search
+      memorySystem.setEmbeddingProvider(null as any);
+      
       // Store multiple memories
       await memorySystem.store({
         content: 'Python is a great programming language for data science',
@@ -71,7 +87,7 @@ describe('Memory System Tests', () => {
       expect(response.results).toBeInstanceOf(Array);
       expect(response.count).toBeGreaterThan(0);
       expect(response.search_methods.text).toBe(true);
-      expect(response.search_methods.semantic).toBe(false);
+      expect(response.search_methods.semantic).toBe(false); // No embedding provider set for this test
       expect(response.search_methods.embedding_provider).toBe(null);
 
       // Should find the Python memory
@@ -231,6 +247,8 @@ describe('Memory System Tests', () => {
 
   describe('Statistics and Health', () => {
     test('should provide accurate memory statistics', async () => {
+      // Disable embedding provider for this test to test basic statistics
+      memorySystem.setEmbeddingProvider(null as any);
       const initialStats = await memorySystem.getStats();
       expect(initialStats.total_memories).toBe(0);
 
@@ -240,8 +258,8 @@ describe('Memory System Tests', () => {
 
       const updatedStats = await memorySystem.getStats();
       expect(updatedStats.total_memories).toBe(2);
-      expect(updatedStats.vector_memories).toBe(0); // No LanceDB
-      expect(updatedStats.embedding_provider).toBe(null);
+      expect(updatedStats.vector_memories).toBe(0); // No LanceDB with embedding provider disabled
+      expect(updatedStats.embedding_provider).toBe('none');
     });
 
     test('should handle edge cases gracefully', async () => {

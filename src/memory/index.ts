@@ -26,7 +26,7 @@ export class MemorySystem {
   private lanceDb: any;
   private memoryTable: any;
   private embeddingProvider: EmbeddingProvider | null = null;
-  private readonly embeddingDimension = 1536; // OpenAI text-embedding-3-small dimension
+  private embeddingDimension = 384; // Default for Transformers.js all-MiniLM-L6-v2
 
   constructor(private db: Database) {
     this.initializeLanceDB();
@@ -65,7 +65,7 @@ export class MemorySystem {
           type: args.type,
           tags: args.tags || [],
           workflow_id: args.workflow_id,
-          metadata: args.metadata || {},
+          metadata: JSON.stringify(args.metadata || {}), // Serialize to JSON string
           embedding,
           created_at: createdAt
         };
@@ -167,16 +167,19 @@ export class MemorySystem {
     const count = await this.db.get('SELECT COUNT(*) as count FROM memories');
     
     let vectorStats = { vector_memories: 0, embedding_provider: null as string | null };
-    if (this.memoryTable) {
+    // Only count vector memories if there's an active embedding provider
+    if (this.memoryTable && this.embeddingProvider) {
       try {
         const vectorCount = await this.memoryTable.countRows();
         vectorStats = {
           vector_memories: vectorCount,
-          embedding_provider: this.embeddingProvider ? 'configured' : 'none'
+          embedding_provider: this.embeddingProvider.getName()
         };
       } catch (error) {
         logger.warn('Failed to get vector database stats', { error });
       }
+    } else {
+      vectorStats.embedding_provider = this.embeddingProvider ? this.embeddingProvider.getName() : 'none';
     }
     
     return { 
@@ -231,6 +234,8 @@ export class MemorySystem {
     try {
       this.embeddingProvider = createEmbeddingProvider(config.memory);
       if (this.embeddingProvider) {
+        // Update dimension based on the actual provider
+        this.embeddingDimension = this.embeddingProvider.getDimension();
         logger.info('Embedding provider initialized', { 
           provider: this.embeddingProvider.getName(),
           dimension: this.embeddingProvider.getDimension()

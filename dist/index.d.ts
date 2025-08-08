@@ -10,12 +10,15 @@ export declare class CNSMCPServer {
     private workspaces;
     private orchestration;
     private db;
+    private commands;
     constructor();
     private setupHandlers;
     private getSystemStatus;
     private getSystemHealth;
     private setupHealthChecks;
+    private ensureDirectoryStructure;
     run(): Promise<void>;
+    private validateEmbeddingProvider;
     private setupGracefulShutdown;
 }
 //# sourceMappingURL=index.d.ts.map

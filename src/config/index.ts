@@ -4,6 +4,8 @@
 
 import { config as dotenvConfig } from 'dotenv';
 import { z } from 'zod';
+import { join } from 'path';
+import { homedir } from 'os';
 import { logger } from '../utils/logger.js';
 
 dotenvConfig();
@@ -38,17 +40,20 @@ function parseIntWithDefault(value: string | undefined, defaultValue: number): n
 }
 
 function validateConfig() {
+  // Auto-detect CNS directory in user's home (download-and-go principle)
+  const cnsDir = join(homedir(), '.cns');
+  
   const rawConfig = {
     database: {
-      path: process.env.DATABASE_PATH || './cns.db',
+      path: process.env.DATABASE_PATH || join(cnsDir, 'data', 'cns.db'),
     },
     workspaces: {
-      workspaces_dir: process.env.WORKSPACES_DIR || '/tmp/cns-workspaces',
+      workspaces_dir: process.env.WORKSPACES_DIR || join(cnsDir, 'workspaces'),
     },
     memory: {
-      embedding_model: process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
-      embedding_provider: process.env.EMBEDDING_PROVIDER || 'none',
-      embedding_dimension: parseIntWithDefault(process.env.EMBEDDING_DIMENSION, 1536),
+      embedding_model: process.env.EMBEDDING_MODEL || 'Xenova/all-MiniLM-L6-v2',
+      embedding_provider: process.env.EMBEDDING_PROVIDER || 'transformers',
+      embedding_dimension: parseIntWithDefault(process.env.EMBEDDING_DIMENSION, 384),
       openai_api_key: process.env.OPENAI_API_KEY,
     },
     orchestration: {
@@ -57,7 +62,7 @@ function validateConfig() {
     },
     logging: {
       level: process.env.LOG_LEVEL || 'info',
-      file: process.env.LOG_FILE || 'cns.log',
+      file: process.env.LOG_FILE || join(cnsDir, 'logs', 'cns.log'),
     },
   };
 

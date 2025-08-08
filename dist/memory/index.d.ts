@@ -8,7 +8,7 @@ export declare class MemorySystem {
     private lanceDb;
     private memoryTable;
     private embeddingProvider;
-    private readonly embeddingDimension;
+    private embeddingDimension;
     constructor(db: Database);
     store(args: any): Promise<{
         content: {
