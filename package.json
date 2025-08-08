@@ -50,13 +50,13 @@
     "semantic-search"
   ],
   "author": "CNS Team",
-  "homepage": "https://github.com/your-org/cns-mcp-server#readme",
+  "homepage": "https://github.com/ari1110/cns-mcp-server#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/your-org/cns-mcp-server.git"
+    "url": "git+https://github.com/ari1110/cns-mcp-server.git"
   },
   "bugs": {
-    "url": "https://github.com/your-org/cns-mcp-server/issues"
+    "url": "https://github.com/ari1110/cns-mcp-server/issues"
   },
   "license": "MIT",
   "dependencies": {
