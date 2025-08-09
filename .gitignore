@@ -72,12 +72,27 @@ coverage/
 
 # Production/development docs (not for repo)
 PRODUCTION-*.md
+PRODUCTION-*.txt
+PRODUCTION-*.json
 test-*.sh
 test-*.js
 scripts/test-*.js
 
-# Package files (generated during build)
+# Package files (generated during build/publish)
 dist-package/
+*.tgz
+*.tar.gz
+
+# All test databases (in any location)
+test-*.db*
+**/test-*.db*
 
 # Hide additional outputs
 cns.log
+*.log.*
+
+# LanceDB data (all locations)
+**/data/lancedb/**
+**/*.lance/**
+data/lancedb
+*.lance
