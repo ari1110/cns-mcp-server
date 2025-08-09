@@ -16,6 +16,10 @@ describe('Orchestration Workflow Tests', () => {
   let orchestrationEngine: OrchestrationEngine;
 
   beforeEach(async () => {
+    // Set unique LanceDB path for this test
+    const testId = Math.random().toString(36).substring(2, 11);
+    process.env.LANCEDB_PATH = `./test-lancedb-orchestration-${testId}`;
+    
     // Clean up any existing test database
     try {
       await rm('./test-orchestration.db');

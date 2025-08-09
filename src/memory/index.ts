@@ -37,7 +37,7 @@ export class MemorySystem {
     logger.info('Storing memory', args);
     
     try {
-      const memoryId = `memory_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const memoryId = `memory_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
       const createdAt = new Date().toISOString();
       
       // Generate embedding if provider is available
@@ -190,8 +190,9 @@ export class MemorySystem {
 
   private async initializeLanceDB() {
     try {
-      // Connect to LanceDB
-      this.lanceDb = await lancedb.connect('./data/lancedb');
+      // Connect to LanceDB using configured path
+      const lancedbPath = config.memory.lancedb_path || './data/lancedb';
+      this.lanceDb = await lancedb.connect(lancedbPath);
       
       // Define proper Apache Arrow schema for memory table
       const schema = new Schema([

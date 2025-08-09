@@ -13,18 +13,15 @@ describe('Memory System Tests', () => {
   let memorySystem: MemorySystem;
 
   beforeEach(async () => {
+    // Set unique LanceDB path for this test
+    const testId = Math.random().toString(36).substring(2, 11);
+    process.env.LANCEDB_PATH = `./test-lancedb-memory-${testId}`;
+    
     // Clean up any existing test database
     try {
       await rm('./test-cns.db');
     } catch {
       // Database doesn't exist
-    }
-    
-    // Clean up LanceDB data
-    try {
-      await rm('./data/lancedb', { recursive: true });
-    } catch {
-      // Directory doesn't exist
     }
 
     // Initialize fresh database and memory system

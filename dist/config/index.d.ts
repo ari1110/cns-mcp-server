@@ -13,6 +13,7 @@ export declare const config: {
         embedding_provider?: string | undefined;
         embedding_dimension?: number | undefined;
         openai_api_key?: string | undefined;
+        lancedb_path?: string | undefined;
     };
     orchestration: {
         max_concurrent_workflows: number;

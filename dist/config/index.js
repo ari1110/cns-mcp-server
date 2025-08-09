@@ -19,6 +19,7 @@ const configSchema = z.object({
         embedding_provider: z.string().optional(),
         embedding_dimension: z.number().int().positive().optional(),
         openai_api_key: z.string().optional(),
+        lancedb_path: z.string().optional(),
     }),
     orchestration: z.object({
         max_concurrent_workflows: z.number().int().positive('Max workflows must be positive'),
@@ -50,6 +51,7 @@ function validateConfig() {
             embedding_provider: process.env.EMBEDDING_PROVIDER || 'transformers',
             embedding_dimension: parseIntWithDefault(process.env.EMBEDDING_DIMENSION, 384),
             openai_api_key: process.env.OPENAI_API_KEY,
+            lancedb_path: process.env.LANCEDB_PATH || join(cnsDir, 'data', 'lancedb'),
         },
         orchestration: {
             max_concurrent_workflows: parseIntWithDefault(process.env.MAX_WORKFLOWS, 10),

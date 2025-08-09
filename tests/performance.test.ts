@@ -17,6 +17,10 @@ describe('Performance Tests', () => {
   let workspaceManager: WorkspaceManager;
 
   beforeEach(async () => {
+    // Set unique LanceDB path for this test
+    const testId = Math.random().toString(36).substring(2, 11);
+    process.env.LANCEDB_PATH = `./test-lancedb-performance-${testId}`;
+    
     // Clean up
     try {
       await rm('./test-performance.db');
@@ -38,7 +42,16 @@ describe('Performance Tests', () => {
   describe('Memory System Performance', () => {
     test('should handle bulk memory storage efficiently', async () => {
       const startTime = Date.now();
-      const testData = [];
+      const testData: Array<{
+        content: string;
+        type: string;
+        tags: string[];
+        metadata: {
+          index: number;
+          category: string;
+          timestamp: string;
+        };
+      }> = [];
       const batchSize = 100;
 
       // Generate test data
@@ -358,7 +371,7 @@ describe('Performance Tests', () => {
 
     test('should handle cleanup efficiently', async () => {
       // Create some test data that would need cleanup
-      const workspaceIds = [];
+      const workspaceIds: string[] = [];
       
       for (let i = 0; i < 5; i++) {
         const result = await orchestrationEngine.launchAgent({
