@@ -140,8 +140,8 @@ cns-server init
 {
   "mcpServers": {
     "cns": {
-      "command": "cns-server", 
-      "args": ["start"],
+      "command": "npx",
+      "args": ["-y", "cns-mcp-server"],
       "env": {
         "DATABASE_PATH": "/home/user/.cns/data/cns.db",
         "EMBEDDING_PROVIDER": "transformers",
