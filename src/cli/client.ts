@@ -57,6 +57,9 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main();
+// Run main if this file is executed directly (handles npm bin symlinks)
+if (import.meta.url === `file://${process.argv[1]}` || 
+    import.meta.url.endsWith('/client.js') ||
+    process.argv[1]?.endsWith('/cns-client')) {
+  main().catch(console.error);
 }
