@@ -814,8 +814,10 @@ export class CNSMCPServer {
   }
 }
 
-// Create and run the server
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Create and run the server (handles npm/npx execution)
+if (import.meta.url === `file://${process.argv[1]}` || 
+    import.meta.url.endsWith('/index.js') ||
+    process.argv[1]?.endsWith('/cns-mcp-server')) {
   const server = new CNSMCPServer();
   server.run().catch((error) => {
     logger.error('Server error:', error);
