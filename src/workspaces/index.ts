@@ -334,7 +334,7 @@ export class WorkspaceManager {
       // Verify it's a git repository
       const workspaceGit = simpleGit(workspacePath);
       await workspaceGit.status();
-    } catch (error) {
+    } catch {
       throw new Error(`Workspace verification failed: ${workspacePath} is not accessible or not a git repository`);
     }
   }
