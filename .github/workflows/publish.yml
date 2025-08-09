@@ -32,6 +32,12 @@ jobs:
     - name: Run production validation
       run: npm run validate:production
       
+    - name: Update package.json version to match tag
+      run: |
+        TAG_VERSION=${GITHUB_REF#refs/tags/v}
+        npm version $TAG_VERSION --no-git-tag-version
+        echo "Updated package.json version to $TAG_VERSION"
+      
     - name: Publish to NPM
       run: npm publish
       env:
