@@ -164,3 +164,90 @@ cns-server init
 - `CNS_CLIENT_PATH` - Override client location  
 - `DATABASE_PATH` - Custom database location
 - `EMBEDDING_PROVIDER` - `transformers` (default) | `openai` | `none`
+
+## 🚀 Production Deployment & CI/CD
+
+### NPM Package Status
+- **Published Package**: `cns-mcp-server` on NPM registry
+- **Current Version**: Check `npm view cns-mcp-server version`
+- **Installation**: `npm install -g cns-mcp-server`
+
+### Automated CI/CD Pipeline
+The repository includes comprehensive GitHub Actions workflows:
+
+#### Test Pipeline (`.github/workflows/test.yml`)
+- **Triggers**: Push to main, pull requests
+- **Node Versions**: 18, 20, 22 (LTS support)
+- **Tests**: Unit tests, integration tests, performance tests
+- **Linting**: ESLint with TypeScript support
+- **Race Condition Prevention**: LanceDB path isolation per test
+
+#### Publish Pipeline (`.github/workflows/publish.yml`)
+- **Triggers**: Git tags (v*.*.*)
+- **Automated Steps**:
+  1. Run full test suite
+  2. Build production artifacts
+  3. Sync package.json version with git tag
+  4. Publish to NPM registry
+  5. Create GitHub release
+
+### Version Management
+```bash
+# Create new release
+git tag v1.0.4
+git push origin v1.0.4
+# → Automatically triggers NPM publish + GitHub release
+```
+
+### Performance & Testing Strategy
+- **Functional Correctness**: Tests focus on what works, not timing
+- **CI-Friendly**: No time-based assertions (unreliable in CI)
+- **Concurrent Safety**: Race condition prevention for parallel tests
+- **Memory Monitoring**: Resource usage tracking
+- **Cross-Platform**: Tested on multiple Node.js versions
+
+## 📁 Repository Structure & Maintenance
+
+### Clean Repository Philosophy
+- **Source Only**: Only essential source code and documentation
+- **No Build Artifacts**: `dist/` excluded from version control
+- **No Runtime Data**: Database files, logs, caches excluded
+- **Professional Appearance**: Clean, navigable public repository
+
+### File Organization
+```
+├── src/                 # TypeScript source code
+├── tests/               # Test suites
+├── .github/workflows/   # CI/CD automation
+├── docs/               # User documentation
+├── package.json        # NPM configuration
+└── README.md          # Project overview
+```
+
+### Excluded from Repository (.gitignore)
+- Build artifacts (`dist/`, `*.tgz`)
+- Runtime data (`*.db`, `*.log`, `data/`)
+- Development cache (`node_modules/`, `.cache/`)
+- IDE files (`.vscode/`, `.idea/`)
+- Test databases (`test-*.db`)
+- LanceDB data (`**/data/lancedb/`)
+
+### Development Workflow
+1. **Local Development**: Work in `src/`, test with `npm test`
+2. **Git Tags**: Create version tags for releases
+3. **Automated Publishing**: CI/CD handles NPM and GitHub releases
+4. **Repository Hygiene**: `.gitignore` prevents unwanted files
+
+## 🧪 Testing Philosophy
+
+### Test Categories
+- **Unit Tests**: Individual component functionality
+- **Integration Tests**: Multi-component workflows
+- **Performance Tests**: System behavior under load
+- **Workspace Tests**: Git worktree isolation
+
+### CI/CD Test Strategy
+- **Reliability over Speed**: Functional correctness vs timing assertions
+- **Environment Agnostic**: Works across different CI environments
+- **Parallel Safety**: Tests can run concurrently without conflicts
+- **Resource Conscious**: Memory and performance monitoring
