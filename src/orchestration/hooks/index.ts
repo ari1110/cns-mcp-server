@@ -63,12 +63,16 @@ export class HookHandlers {
         // Extract associate type
         const associateType = this.deriveAssociateType(args.agent_type);
         
+        // Extract detailed task specifications from transcript
+        const taskDetails = await this.extractTaskDetailsFromTranscript(args.transcript_path);
+        
         // Create handoff in orchestration engine
         await this.orchestration.createHandoff({
           from: args.agent_type,
           to: associateType,
           workflow_id: args.workflow_id || uuidv4(),
           type: 'task_assignment',
+          task_details: taskDetails || undefined,
         });
 
         workflowStatus = 'delegation';
@@ -78,7 +82,7 @@ export class HookHandlers {
         // AUTO-TRIGGER: Launch associate immediately
         await this.orchestration.launchAgent({
           agent_type: associateType,
-          specifications: await this.getManagerSpecifications(args.workflow_id),
+          specifications: taskDetails || 'Implement based on manager requirements',
           workflow_id: args.workflow_id,
         });
 
@@ -150,7 +154,7 @@ export class HookHandlers {
 
       // Update workflow state
       if (args.workflow_id) {
-        await this.orchestration.updateWorkflowStatus(args.workflow_id, workflowStatus);
+        await this.orchestration.updateWorkflowStatus(args.workflow_id, workflowStatus as any);
       }
 
       // Process any pending events
@@ -295,14 +299,57 @@ export class HookHandlers {
     return `${associateType}-manager`;
   }
 
-  private async getManagerSpecifications(workflowId?: string): Promise<string> {
-    if (!workflowId) {
-      return 'Implement based on project requirements';
+
+  private async extractTaskDetailsFromTranscript(transcriptPath: string): Promise<string | null> {
+    try {
+      const fs = await import('fs/promises');
+      const transcriptContent = await fs.readFile(transcriptPath, 'utf-8');
+      
+      // Look for task assignment patterns in the transcript
+      // Extract the content between user requests and task completion markers
+      const lines = transcriptContent.split('\n');
+      let taskDetails: string[] = [];
+      let inTaskAssignment = false;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Start collecting when we see user input or detailed instructions
+        if (line.includes('user:') || line.includes('User:') || 
+            line.includes('implement') || line.includes('create') || 
+            line.includes('add') || line.includes('build')) {
+          inTaskAssignment = true;
+          taskDetails.push(line);
+        } 
+        // Stop collecting when we see task completion markers
+        else if (line.includes('Task Assignment') || 
+                 line.includes('Implementation Complete') ||
+                 line.includes('Approved for Integration')) {
+          break;
+        }
+        // Continue collecting relevant lines
+        else if (inTaskAssignment && line.length > 10) {
+          // Skip system messages, timestamps, and very short lines
+          if (!line.includes('system') && !line.includes('assistant:') && 
+              !line.includes('[') && !line.includes('Error:')) {
+            taskDetails.push(line);
+          }
+        }
+      }
+      
+      // Clean and join the task details
+      const cleanedDetails = taskDetails
+        .map(line => line.replace(/^(user:|User:|assistant:)/i, '').trim())
+        .filter(line => line.length > 5)
+        .join(' ')
+        .substring(0, 1000); // Limit to 1000 chars
+      
+      return cleanedDetails || null;
+      
+    } catch (error) {
+      logger.error('Failed to extract task details from transcript', { error, transcriptPath });
+      return null;
     }
-    
-    // Retrieve specifications from memory/database
-    const specs = await this.orchestration.getWorkflowSpecifications(workflowId);
-    return specs || 'Implement based on manager requirements';
   }
 
   private buildContextMessage(status: any, workflows: any[]): string {

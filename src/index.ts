@@ -311,6 +311,34 @@ export class CNSMCPServer {
             },
           },
         },
+        {
+          name: 'detect_stale_workflows',
+          description: 'Detect and mark workflows as stale after a timeout period',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              threshold_minutes: {
+                type: 'number',
+                default: 120,
+                description: 'Minutes after which an active workflow is considered stale'
+              }
+            },
+          },
+        },
+        {
+          name: 'cleanup_stale_workflows',
+          description: 'Remove old stale workflows from the database',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              retention_days: {
+                type: 'number',
+                default: 7,
+                description: 'Days to keep stale workflows before deletion'
+              }
+            },
+          },
+        },
       ],
     }));
 
@@ -442,6 +470,10 @@ export class CNSMCPServer {
             return await this.getSystemHealth();
           case 'validate_embedding_provider':
             return await this.validateEmbeddingProvider(args as any);
+          case 'detect_stale_workflows':
+            return await this.detectStaleWorkflows(args as any);
+          case 'cleanup_stale_workflows':
+            return await this.cleanupStaleWorkflows(args as any);
 
           default:
             throw new Error(`Unknown tool: ${name}`);
@@ -983,6 +1015,76 @@ export class CNSMCPServer {
             recommendation: error instanceof Error && error.message.includes('OpenAI') 
               ? 'Check OPENAI_API_KEY or switch to EMBEDDING_PROVIDER=transformers'
               : 'Check embedding provider configuration'
+          })
+        }]
+      };
+    }
+  }
+
+  private async detectStaleWorkflows(args: { threshold_minutes?: number }) {
+    const thresholdMinutes = args.threshold_minutes ?? 120;
+    
+    try {
+      const staleCount = await this.orchestration.detectAndMarkStaleWorkflows(thresholdMinutes);
+      
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'success',
+            stale_workflows_found: staleCount,
+            threshold_minutes: thresholdMinutes,
+            message: staleCount > 0 
+              ? `Marked ${staleCount} workflows as stale` 
+              : 'No stale workflows found'
+          })
+        }]
+      };
+    } catch (error) {
+      logger.error('Failed to detect stale workflows', { error });
+      
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            message: 'Failed to detect stale workflows'
+          })
+        }]
+      };
+    }
+  }
+
+  private async cleanupStaleWorkflows(args: { retention_days?: number }) {
+    const retentionDays = args.retention_days ?? 7;
+    
+    try {
+      const deletedCount = await this.orchestration.cleanupOldStaleWorkflows(retentionDays);
+      
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'success',
+            deleted_workflows: deletedCount,
+            retention_days: retentionDays,
+            message: deletedCount > 0 
+              ? `Deleted ${deletedCount} old stale workflows` 
+              : 'No old stale workflows to cleanup'
+          })
+        }]
+      };
+    } catch (error) {
+      logger.error('Failed to cleanup stale workflows', { error });
+      
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            message: 'Failed to cleanup stale workflows'
           })
         }]
       };

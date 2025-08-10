@@ -16,6 +16,7 @@ interface Handoff {
   to: string;
   workflow_id: string;
   type: string;
+  task_details?: string;
   created_at: Date;
   processed: boolean;
 }
@@ -23,7 +24,7 @@ interface Handoff {
 interface Workflow {
   id: string;
   name?: string;
-  status: string;
+  status: 'active' | 'completed' | 'failed' | 'stale' | 'approved' | 'initialized' | 'delegation' | 'awaiting_approval' | 'revision_required';
   agent_type?: string;
   agent_role?: string;
   specifications?: string;
@@ -89,9 +90,9 @@ export class OrchestrationEngine extends EventEmitter {
     
     // Store in database
     await this.db.run(
-      `INSERT INTO handoffs (id, from_agent, to_agent, workflow_id, type, created_at, processed)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, handoff.from, handoff.to, handoff.workflow_id, handoff.type, newHandoff.created_at.toISOString(), 0]
+      `INSERT INTO handoffs (id, from_agent, to_agent, workflow_id, type, task_details, created_at, processed)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, handoff.from, handoff.to, handoff.workflow_id, handoff.type, handoff.task_details, newHandoff.created_at.toISOString(), 0]
     );
     
     // Emit event for processing
@@ -279,7 +280,7 @@ export class OrchestrationEngine extends EventEmitter {
    * Helper methods
    */
   
-  async updateWorkflowStatus(workflowId: string, status: string) {
+  async updateWorkflowStatus(workflowId: string, status: 'active' | 'completed' | 'failed' | 'stale' | 'approved' | 'initialized' | 'delegation' | 'awaiting_approval' | 'revision_required') {
     const workflow = this.workflows.get(workflowId);
     if (workflow) {
       workflow.status = status;
@@ -550,6 +551,47 @@ export class OrchestrationEngine extends EventEmitter {
         logger.error(`Failed to cleanup workspace ${item.workflow_id}`, error);
       }
     }
+  }
+
+  async detectAndMarkStaleWorkflows(staleThresholdMinutes: number = 120) {
+    const now = new Date();
+    const staleThreshold = new Date(now.getTime() - staleThresholdMinutes * 60 * 1000);
+    
+    const staleWorkflows = await this.db.all(
+      `SELECT * FROM workflows 
+       WHERE status = 'active' 
+       AND updated_at < ?`,
+      [staleThreshold.toISOString()]
+    );
+    
+    for (const workflow of staleWorkflows) {
+      try {
+        await this.updateWorkflowStatus(workflow.id, 'stale');
+        logger.info(`Marked workflow ${workflow.id} as stale (inactive for ${staleThresholdMinutes} minutes)`);
+      } catch (error) {
+        logger.error(`Failed to mark workflow ${workflow.id} as stale:`, error);
+      }
+    }
+    
+    return staleWorkflows.length;
+  }
+
+  async cleanupOldStaleWorkflows(retentionDays: number = 7) {
+    const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    
+    const result = await this.db.run(
+      `DELETE FROM workflows 
+       WHERE status = 'stale' 
+       AND updated_at < ?`,
+      [cutoffDate.toISOString()]
+    );
+    
+    const deletedCount = result.changes || 0;
+    if (deletedCount > 0) {
+      logger.info(`Cleaned up ${deletedCount} old stale workflows older than ${retentionDays} days`);
+    }
+    
+    return deletedCount;
   }
 
   async trackToolUsage(usage: { tool_name: string; session_id?: string; timestamp: Date }) {

@@ -35,6 +35,7 @@ export class Database {
         to_agent TEXT,
         workflow_id TEXT,
         type TEXT,
+        task_details TEXT,
         created_at TEXT,
         processed INTEGER DEFAULT 0
       );
@@ -63,6 +64,14 @@ export class Database {
         timestamp TEXT
       );
     `);
+    
+    // Migrations for existing databases
+    try {
+      await this.db.exec(`ALTER TABLE handoffs ADD COLUMN task_details TEXT`);
+      logger.info('Added task_details column to handoffs table');
+    } catch (error) {
+      // Column probably already exists, which is fine
+    }
     
     logger.info('Database initialized');
   }
