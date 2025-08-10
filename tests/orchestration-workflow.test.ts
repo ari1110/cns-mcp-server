@@ -149,10 +149,13 @@ describe('Orchestration Workflow Tests', () => {
       const statusResponse = JSON.parse(statusResult.content[0].text);
 
       expect(statusResponse).toBeDefined();
-      expect(statusResponse.id).toBe(workflowId);
-      expect(statusResponse.status).toBe('active');
-      expect(statusResponse.agent_type).toBe('analyst');
-      expect(statusResponse.specifications).toContain('requirements');
+      expect(statusResponse.workflow).toBeDefined();
+      expect(statusResponse.workflow.id).toBe(workflowId);
+      expect(statusResponse.workflow.status).toBe('active');
+      expect(statusResponse.workflow.agent_type).toBe('analyst');
+      expect(statusResponse.workflow.specifications).toContain('requirements');
+      expect(statusResponse.handoff_history).toBeDefined();
+      expect(statusResponse.handoff_history.count).toBeGreaterThanOrEqual(0);
     });
 
     test('should get system statistics', async () => {
