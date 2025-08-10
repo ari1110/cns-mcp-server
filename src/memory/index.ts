@@ -188,6 +188,83 @@ export class MemorySystem {
     };
   }
 
+  async listMemories(options: {
+    type?: string;
+    workflow_id?: string;
+    limit?: number;
+    offset?: number;
+    order_by?: 'created_at' | 'type';
+    order?: 'ASC' | 'DESC';
+  } = {}) {
+    const {
+      type,
+      workflow_id,
+      limit = 20,
+      offset = 0,
+      order_by = 'created_at',
+      order = 'DESC'
+    } = options;
+
+    let query = 'SELECT * FROM memories';
+    const conditions: string[] = [];
+    const params: any[] = [];
+
+    if (type) {
+      conditions.push('type = ?');
+      params.push(type);
+    }
+
+    if (workflow_id) {
+      conditions.push('workflow_id = ?');
+      params.push(workflow_id);
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    query += ` ORDER BY ${order_by} ${order} LIMIT ? OFFSET ?`;
+    params.push(limit, offset);
+
+    try {
+      const memories = await this.db.all(query, params);
+      
+      // Parse tags JSON for each memory
+      const parsedMemories = memories.map((memory: any) => ({
+        ...memory,
+        tags: memory.tags ? JSON.parse(memory.tags) : [],
+        metadata: memory.metadata ? JSON.parse(memory.metadata) : {}
+      }));
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              count: memories.length,
+              memories: parsedMemories,
+              filters: { type, workflow_id },
+              pagination: { limit, offset, order_by, order }
+            }, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error('Failed to list memories', { error, options });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: 'Failed to list memories',
+              message: error instanceof Error ? error.message : 'Unknown error'
+            }, null, 2),
+          },
+        ],
+      };
+    }
+  }
+
   private async initializeLanceDB() {
     try {
       // Connect to LanceDB using configured path

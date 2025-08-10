@@ -294,34 +294,174 @@ export class OrchestrationEngine extends EventEmitter {
 
   async getWorkflowStatus(workflowId: string) {
     const workflow = this.workflows.get(workflowId);
+    let workflowData = workflow;
     
     if (!workflow) {
       // Try to load from database
       const row = await this.db.get('SELECT * FROM workflows WHERE id = ?', [workflowId]);
       if (row) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(row, null, 2),
-            },
-          ],
-        };
+        workflowData = row;
       }
     }
     
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(workflow || { error: 'Workflow not found' }, null, 2),
-        },
-      ],
-    };
+    if (!workflowData) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ error: 'Workflow not found' }, null, 2),
+          },
+        ],
+      };
+    }
+    
+    // Get handoff history for this workflow
+    try {
+      const handoffs = await this.db.all(
+        'SELECT * FROM handoffs WHERE workflow_id = ? ORDER BY created_at ASC',
+        [workflowId]
+      );
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              workflow: workflowData,
+              handoff_history: {
+                count: handoffs.length,
+                handoffs: handoffs
+              }
+            }, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      logger.warn('Failed to load handoff history for workflow', { error, workflowId });
+      
+      // Return workflow data without handoffs if handoff query fails
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              workflow: workflowData,
+              handoff_history: {
+                error: 'Failed to load handoff history'
+              }
+            }, null, 2),
+          },
+        ],
+      };
+    }
   }
 
   async getActiveWorkflows() {
     return Array.from(this.workflows.values()).filter(w => w.status === 'active');
+  }
+
+  async listWorkflows(options: { 
+    status?: string; 
+    agent_type?: string; 
+    limit?: number; 
+    offset?: number; 
+  } = {}) {
+    const { status, agent_type, limit = 50, offset = 0 } = options;
+    
+    let query = 'SELECT * FROM workflows';
+    const conditions: string[] = [];
+    const params: any[] = [];
+    
+    if (status) {
+      conditions.push('status = ?');
+      params.push(status);
+    }
+    
+    if (agent_type) {
+      conditions.push('agent_type = ?');
+      params.push(agent_type);
+    }
+    
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+    
+    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+    
+    try {
+      const rows = await this.db.all(query, params);
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              count: rows.length,
+              workflows: rows,
+              filters: { status, agent_type },
+              pagination: { limit, offset }
+            }, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error('Failed to list workflows', { error, options });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: 'Failed to list workflows',
+              message: error instanceof Error ? error.message : 'Unknown error'
+            }, null, 2),
+          },
+        ],
+      };
+    }
+  }
+
+  async getWorkflowHandoffs(workflowId: string, includeProcessed: boolean = true) {
+    let query = 'SELECT * FROM handoffs WHERE workflow_id = ?';
+    const params = [workflowId];
+    
+    if (!includeProcessed) {
+      query += ' AND processed = 0';
+    }
+    
+    query += ' ORDER BY created_at ASC';
+    
+    try {
+      const handoffs = await this.db.all(query, params);
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              workflow_id: workflowId,
+              count: handoffs.length,
+              handoffs: handoffs,
+              include_processed: includeProcessed
+            }, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error('Failed to get workflow handoffs', { error, workflowId });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: 'Failed to get workflow handoffs',
+              workflow_id: workflowId,
+              message: error instanceof Error ? error.message : 'Unknown error'
+            }, null, 2),
+          },
+        ],
+      };
+    }
   }
 
   async getWorkflowSpecifications(workflowId: string): Promise<string> {

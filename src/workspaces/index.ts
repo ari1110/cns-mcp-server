@@ -194,6 +194,62 @@ export class WorkspaceManager {
     }
   }
 
+  async listAll() {
+    try {
+      // Get active worktrees from git
+      const worktreeList = await this.git.raw(['worktree', 'list', '--porcelain']);
+      const activeWorktrees = this.parseWorktreeList(worktreeList);
+      
+      // Get workspace directory contents
+      let localWorkspaces: string[] = [];
+      try {
+        await access(this.workspacesDir, constants.F_OK);
+        localWorkspaces = await readdir(this.workspacesDir);
+      } catch {
+        // Workspaces directory doesn't exist
+      }
+      
+      // Calculate disk usage
+      const diskUsage = await this.calculateDiskUsage();
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              summary: {
+                active_worktrees: activeWorktrees.length,
+                local_workspaces: localWorkspaces.length,
+                total_disk_usage: this.formatBytes(diskUsage),
+                workspaces_dir: this.workspacesDir,
+              },
+              worktrees: activeWorktrees.map(w => ({
+                path: w.worktree,
+                branch: w.branch,
+                commit: w.HEAD,
+                bare: w.bare
+              })),
+              local_workspace_dirs: localWorkspaces
+            }, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error('Failed to list workspaces', error);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: 'Failed to list workspaces',
+              message: error instanceof Error ? error.message : 'Unknown error'
+            }, null, 2),
+          },
+        ],
+      };
+    }
+  }
+
   private async validateGitRepository(): Promise<void> {
     try {
       await this.git.status();

@@ -58,7 +58,7 @@ export class CNSMCPServer {
     this.workspaces = new WorkspaceManager(config.workspaces);
     this.orchestration = new OrchestrationEngine(this.db, this.memory, this.workspaces);
     this.hookHandlers = new HookHandlers(this.orchestration);
-    this.commands = new CNSCommands(this.db, this.memory, this.workspaces);
+    this.commands = new CNSCommands(this.db, this.memory, this.workspaces, this.orchestration);
 
     this.setupHandlers();
     this.setupHealthChecks();
@@ -149,6 +149,21 @@ export class CNSMCPServer {
             required: ['query'],
           },
         },
+        {
+          name: 'list_memories',
+          description: 'Browse and list memories with optional filtering',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              type: { type: 'string', description: 'Filter by memory type' },
+              workflow_id: { type: 'string', description: 'Filter by workflow ID' },
+              limit: { type: 'number', default: 20, description: 'Maximum number of memories to return' },
+              offset: { type: 'number', default: 0, description: 'Number of memories to skip for pagination' },
+              order_by: { type: 'string', enum: ['created_at', 'type'], default: 'created_at', description: 'Field to order by' },
+              order: { type: 'string', enum: ['ASC', 'DESC'], default: 'DESC', description: 'Sort order' },
+            },
+          },
+        },
 
         // Orchestration Operations
         {
@@ -217,6 +232,14 @@ export class CNSMCPServer {
             required: ['agent_id'],
           },
         },
+        {
+          name: 'list_workspaces',
+          description: 'List all active workspaces with details',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+          },
+        },
 
         // System Operations
         {
@@ -237,6 +260,31 @@ export class CNSMCPServer {
             type: 'object',
             properties: {
               workflow_id: { type: 'string' },
+            },
+            required: ['workflow_id'],
+          },
+        },
+        {
+          name: 'list_workflows',
+          description: 'List all workflows with optional filtering',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              status: { type: 'string', description: 'Filter by workflow status (active, completed, failed, etc.)' },
+              agent_type: { type: 'string', description: 'Filter by agent type' },
+              limit: { type: 'number', default: 50, description: 'Maximum number of workflows to return' },
+              offset: { type: 'number', default: 0, description: 'Number of workflows to skip for pagination' },
+            },
+          },
+        },
+        {
+          name: 'get_workflow_handoffs',
+          description: 'Get handoff history for a specific workflow for debugging agent coordination',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              workflow_id: { type: 'string' },
+              include_processed: { type: 'boolean', default: true, description: 'Include processed handoffs' },
             },
             required: ['workflow_id'],
           },
@@ -362,6 +410,8 @@ export class CNSMCPServer {
             return await this.memory.store(args);
           case 'retrieve_memory':
             return await this.memory.retrieve(args);
+          case 'list_memories':
+            return await this.memory.listMemories(args as any);
 
           // Orchestration operations
           case 'launch_agent':
@@ -376,12 +426,18 @@ export class CNSMCPServer {
             return await this.workspaces.create(args as any);
           case 'cleanup_workspace':
             return await this.workspaces.cleanup(args as any);
+          case 'list_workspaces':
+            return await this.workspaces.listAll();
 
           // System operations
           case 'get_system_status':
             return await this.getSystemStatus(args as any);
           case 'get_workflow_status':
             return await this.orchestration.getWorkflowStatus((args as any).workflow_id);
+          case 'list_workflows':
+            return await this.orchestration.listWorkflows(args as any);
+          case 'get_workflow_handoffs':
+            return await this.orchestration.getWorkflowHandoffs((args as any).workflow_id, (args as any).include_processed);
           case 'get_system_health':
             return await this.getSystemHealth();
           case 'validate_embedding_provider':

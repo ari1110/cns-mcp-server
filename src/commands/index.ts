@@ -16,9 +16,9 @@ export class CNSCommands {
   private orchestrationEngine: OrchestrationEngine;
   private healthMonitor: HealthMonitor;
 
-  constructor(db: Database, memory: MemorySystem, workspaces: WorkspaceManager) {
+  constructor(db: Database, memory: MemorySystem, workspaces: WorkspaceManager, orchestrationEngine?: OrchestrationEngine) {
     this.memorySystem = memory;
-    this.orchestrationEngine = new OrchestrationEngine(db, memory, workspaces);
+    this.orchestrationEngine = orchestrationEngine || new OrchestrationEngine(db, memory, workspaces);
     this.healthMonitor = new HealthMonitor();
   }
 
