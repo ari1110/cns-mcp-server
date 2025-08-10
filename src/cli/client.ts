@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
 import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { createRequire } from 'module';
 import { access, constants } from 'fs/promises';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 const require = createRequire(import.meta.url);
 
 async function findClientPath(): Promise<string> {

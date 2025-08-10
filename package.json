@@ -7,7 +7,9 @@
   "bin": {
     "cns-mcp-server": "./dist/index.js",
     "cns-server": "./dist/cli/server.js",
-    "cns-client": "./dist/cli/client.js"
+    "cns-client": "./dist/cli/client.js",
+    "cns-runner": "./dist/cli/runner.js",
+    "cns-daemon": "./dist/daemon/index.js"
   },
   "files": [
     "dist",

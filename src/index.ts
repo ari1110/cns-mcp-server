@@ -19,6 +19,7 @@ import { HookHandlers } from './orchestration/hooks/index.js';
 import { MemorySystem } from './memory/index.js';
 import { WorkspaceManager } from './workspaces/index.js';
 import { OrchestrationEngine } from './orchestration/engine.js';
+import { AgentRunner } from './agent-runner/index.js';
 import { logger } from './utils/logger.js';
 import { Database } from './database/index.js';
 import { config } from './config/index.js';
@@ -34,6 +35,7 @@ export class CNSMCPServer {
   private memory: MemorySystem;
   private workspaces: WorkspaceManager;
   private orchestration: OrchestrationEngine;
+  private agentRunner: AgentRunner | null = null;
   private db: Database;
   private commands: CNSCommands;
 
@@ -930,8 +932,68 @@ export class CNSMCPServer {
     logger.info('Directory structure ensured');
   }
 
+  private async startAgentRunner() {
+    logger.info('🤖 Starting integrated agent runner...');
+    
+    try {
+      // Set environment variables for agent runner configuration  
+      if (!process.env.CNS_MAX_AGENTS) {
+        process.env.CNS_MAX_AGENTS = '3'; // Default to 3 concurrent agents
+      }
+      
+      this.agentRunner = new AgentRunner();
+      await this.agentRunner.start();
+      
+      logger.info('✅ Agent runner started successfully');
+      logger.info(`📊 Max concurrent agents: ${process.env.CNS_MAX_AGENTS}`);
+      
+      // Add health monitoring for agent runner
+      this.setupAgentRunnerHealthCheck();
+      
+    } catch (error) {
+      logger.error('❌ Failed to start agent runner:', error);
+      
+      // Don't fail the entire MCP server if agent runner fails
+      // Just log the error and continue with MCP-only mode
+      logger.warn('🔧 Continuing in MCP-only mode (no autonomous agents)');
+      this.agentRunner = null;
+    }
+  }
+
+  private setupAgentRunnerHealthCheck() {
+    if (!this.agentRunner) return;
+    
+    healthMonitor.addHealthCheck('agent_runner', async () => {
+      try {
+        if (!this.agentRunner) {
+          return {
+            status: 'unhealthy',
+            message: 'Agent runner not initialized'
+          };
+        }
+        
+        const status = this.agentRunner.getStatus();
+        const hasIssues = !status.isRunning;
+        
+        return {
+          status: hasIssues ? 'degraded' : 'healthy',
+          message: status.isRunning 
+            ? `Agent runner operational (${status.runningAgents}/${status.maxConcurrentAgents} agents)`
+            : 'Agent runner not running',
+          metadata: status
+        };
+      } catch (error) {
+        return {
+          status: 'unhealthy',
+          message: 'Agent runner health check failed',
+          metadata: { error: error instanceof Error ? error.message : error }
+        };
+      }
+    });
+  }
+
   async run() {
-    logger.info('Starting CNS MCP Server...');
+    logger.info('🚀 Starting CNS MCP Server with Invisible Agent Runner...');
     
     try {
       // Auto-create CNS directory structure (download-and-go)
@@ -939,17 +1001,21 @@ export class CNSMCPServer {
       
       // Initialize database
       await this.db.initialize();
-      logger.info('Database initialized successfully');
+      logger.info('✅ Database initialized successfully');
       
       // Start orchestration engine
       await this.orchestration.start();
-      logger.info('Orchestration engine started successfully');
+      logger.info('✅ Orchestration engine started successfully');
+      
+      // Auto-start agent runner invisibly
+      await this.startAgentRunner();
       
       // Connect to stdio transport
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
       
-      logger.info('CNS MCP Server running on stdio');
+      logger.info('🎯 CNS MCP Server running (MCP + Agent Runner integrated)');
+      logger.info('🤖 Autonomous agents will execute automatically when tasks are queued');
       
       // Setup graceful shutdown
       this.setupGracefulShutdown();
@@ -1093,21 +1159,28 @@ export class CNSMCPServer {
 
   private setupGracefulShutdown() {
     gracefulShutdown(async () => {
-      logger.info('Shutting down CNS MCP Server...');
+      logger.info('🛑 Shutting down CNS MCP Server...');
+      
+      // Stop agent runner first (to prevent new agents from spawning)
+      if (this.agentRunner) {
+        logger.info('Stopping agent runner...');
+        await this.agentRunner.stop();
+        logger.info('✅ Agent runner stopped');
+      }
       
       // Stop orchestration engine
       if (this.orchestration) {
         await this.orchestration.stop();
-        logger.info('Orchestration engine stopped');
+        logger.info('✅ Orchestration engine stopped');
       }
       
       // Close database connections if method exists
       if (this.db && typeof (this.db as any).close === 'function') {
         await (this.db as any).close();
-        logger.info('Database connections closed');
+        logger.info('✅ Database connections closed');
       }
       
-      logger.info('CNS MCP Server shutdown complete');
+      logger.info('🎯 CNS MCP Server shutdown complete');
     });
   }
 }

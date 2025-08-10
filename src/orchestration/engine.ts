@@ -216,6 +216,11 @@ export class OrchestrationEngine extends EventEmitter {
   async signalCompletion(args: { agent_id: string; workflow_id?: string; result: string; artifacts?: any[] }) {
     logger.info('Agent signaled completion', { agent: args.agent_id });
     
+    // Remove completed task from pending queue
+    this.pendingTasks = this.pendingTasks.filter(task => 
+      !(task.workflow_id === args.workflow_id && task.type === 'launch_agent')
+    );
+    
     // Update workflow status
     if (args.workflow_id) {
       await this.updateWorkflowStatus(args.workflow_id, 'completed');
@@ -245,6 +250,7 @@ export class OrchestrationEngine extends EventEmitter {
             status: 'recorded',
             agent_id: args.agent_id,
             workflow_id: args.workflow_id,
+            tasks_removed: 1,
           }, null, 2),
         },
       ],

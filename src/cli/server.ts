@@ -20,16 +20,20 @@ Usage:
   cns-server <command> [options]
 
 Commands:
-  init              Initialize CNS configuration
-  start             Start the MCP server  
+  init              Initialize CNS configuration (required once)
+  daemon            Start unified daemon (advanced users)
+  start-mcp         Start only MCP server (debugging)
   validate          Validate system configuration
   help              Show this help message
   --version         Show version number
 
-Examples:
-  cns-server init
-  cns-server validate --verbose
-  cns-server start
+Quick Start:
+  cns-server init         # One-time setup
+  # Then just use Claude Code - agents start automatically!
+
+Advanced Usage:
+  cns-server daemon       # Manual unified daemon
+  cns-server start-mcp    # MCP server only (no agents)
 `);
 }
 
@@ -122,10 +126,18 @@ function initializeSystem() {
   }, null, 2));
   
   console.log('\n✅ CNS initialized successfully!');
-  console.log('\nNext steps:');
+  console.log('\n🎯 Ready to Go!');
   console.log('1. Copy the configuration above to Claude Code');
   console.log('2. Restart Claude Code');
-  console.log('3. Try /cns:status in a conversation');
+  console.log('3. Start using autonomous agents immediately!');
+  console.log('\n💡 How it works:');
+  console.log('   • Autonomous agents start automatically with Claude Code');
+  console.log('   • No separate daemons or processes to manage');
+  console.log('   • Use completion markers like "Task Assignment" to trigger workflows');
+  console.log('   • Try MCP tools like cns:get_system_status to monitor the system');
+  console.log('\n🔧 Advanced usage:');
+  console.log('   cns-server daemon      # Manual unified daemon (optional)');
+  console.log('   cns-server start-mcp   # MCP server only (debugging)');
 }
 
 async function main() {
@@ -140,8 +152,28 @@ async function main() {
       const verbose = args.includes('--verbose');
       validateSystem(verbose);
       break;
+    case 'daemon': {
+      console.log('🚀 Starting CNS Daemon (Complete System)...');
+      const { CNSDaemon } = await import('../daemon/index.js');
+      const daemon = new CNSDaemon();
+      await daemon.start();
+      console.log('CNS Daemon is running. Press Ctrl+C to stop.');
+      process.stdin.resume(); // Keep process alive
+      break;
+    }
     case 'start': {
-      console.log('Starting CNS MCP Server...');
+      console.log('ℹ️  The "start" command is deprecated.');
+      console.log('🎯 CNS now starts automatically with Claude Code!');
+      console.log('');
+      console.log('💡 Just use Claude Code normally - autonomous agents work automatically');
+      console.log('');
+      console.log('🔧 If you need manual control, use:');
+      console.log('   cns-server daemon      # Manual unified daemon');
+      console.log('   cns-server start-mcp   # MCP server only');
+      break;
+    }
+    case 'start-mcp': {
+      console.log('Starting CNS MCP Server only...');
       // Import and start the MCP server
       const { CNSMCPServer } = await import('../index.js');
       const server = new CNSMCPServer();
