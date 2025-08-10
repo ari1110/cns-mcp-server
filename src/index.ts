@@ -11,6 +11,8 @@ import {
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { HookHandlers } from './orchestration/hooks/index.js';
@@ -45,6 +47,7 @@ export class CNSMCPServer {
         capabilities: {
           resources: {},
           tools: {},
+          prompts: {},
         },
       }
     );
@@ -551,6 +554,143 @@ export class CNSMCPServer {
           }
 
           throw new Error(`Unknown resource: ${uri}`);
+      }
+    });
+
+    // List available prompts (these become slash commands in Claude Code)
+    this.server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+      prompts: [
+        {
+          name: 'status',
+          description: '🚀 Show CNS system status',
+          arguments: [],
+        },
+        {
+          name: 'health',
+          description: '🏥 Run health diagnostics',
+          arguments: [],
+        },
+        {
+          name: 'workflows',
+          description: '🔄 List active workflows',
+          arguments: [],
+        },
+        {
+          name: 'search',
+          description: '🔍 Search memories',
+          arguments: [
+            {
+              name: 'query',
+              description: 'Search query',
+              required: true,
+            },
+          ],
+        },
+        {
+          name: 'memories',
+          description: '🧠 Show memory statistics',
+          arguments: [],
+        },
+        {
+          name: 'help',
+          description: '📚 Show CNS help',
+          arguments: [],
+        },
+      ],
+    }));
+
+    // Get a specific prompt
+    this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params;
+
+      switch (name) {
+        case 'status':
+          return {
+            description: '🚀 Show CNS system status',
+            messages: [
+              {
+                role: 'user',
+                content: {
+                  type: 'text',
+                  text: 'Show me the current CNS system status',
+                },
+              },
+            ],
+          };
+
+        case 'health':
+          return {
+            description: '🏥 Run health diagnostics',
+            messages: [
+              {
+                role: 'user',
+                content: {
+                  type: 'text',
+                  text: 'Run a complete health check on the CNS system',
+                },
+              },
+            ],
+          };
+
+        case 'workflows':
+          return {
+            description: '🔄 List active workflows',
+            messages: [
+              {
+                role: 'user',
+                content: {
+                  type: 'text',
+                  text: 'Show me all active CNS workflows and pending tasks',
+                },
+              },
+            ],
+          };
+
+        case 'search':
+          const query = args?.query || '';
+          return {
+            description: '🔍 Search memories',
+            messages: [
+              {
+                role: 'user',
+                content: {
+                  type: 'text',
+                  text: query ? `Search CNS memories for: ${query}` : 'Search CNS memories',
+                },
+              },
+            ],
+          };
+
+        case 'memories':
+          return {
+            description: '🧠 Show memory statistics',
+            messages: [
+              {
+                role: 'user',
+                content: {
+                  type: 'text',
+                  text: 'Show me CNS memory statistics and recent memories',
+                },
+              },
+            ],
+          };
+
+        case 'help':
+          return {
+            description: '📚 Show CNS help',
+            messages: [
+              {
+                role: 'user',
+                content: {
+                  type: 'text',
+                  text: 'Show me help for the CNS system and available commands',
+                },
+              },
+            ],
+          };
+
+        default:
+          throw new Error(`Unknown prompt: ${name}`);
       }
     });
   }
