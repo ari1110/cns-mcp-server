@@ -109,7 +109,14 @@ export class OrchestrationEngine extends EventEmitter {
   async launchAgent(args: LaunchAgentArgs) {
     const workflowId = args.workflow_id || uuidv4();
     
-    logger.info('Launching agent', { agent: args.agent_type, workflow: workflowId });
+    logger.info('🚀 MCP TOOL USED: launch_agent called', { 
+      agent: args.agent_type, 
+      workflow: workflowId,
+      hasSpecifications: !!args.specifications,
+      specificationsLength: args.specifications?.length || 0,
+      specificationsPreview: args.specifications?.substring(0, 100) + '...' || 'NULL',
+      calledBy: 'Manager Agent via MCP'
+    });
     
     // Create or update workflow
     const workflow: Workflow = {
@@ -202,6 +209,7 @@ export class OrchestrationEngine extends EventEmitter {
               type: t.type,
               agent_type: t.agent_type,
               workflow_id: t.workflow_id,
+              prompt: t.prompt,
               created_at: t.created_at,
             })),
           }, null, 2),
@@ -633,22 +641,65 @@ export class OrchestrationEngine extends EventEmitter {
   }
 
   private generateTaskPrompt(agentType: string, specifications: string, workflowId: string): string {
-    return `
-Execute Task tool with:
-- subagent_type: "${agentType}"
-- description: "Autonomous task for workflow ${workflowId}"
-- prompt: |
-    You are ${agentType} executing an autonomous task.
+    // Manager agents can spawn teams, associate agents are isolated
+    const managerAgentTypes = [
+      'team-manager', 'feature-team-lead', 'project-lead', 'tech-lead', 
+      'release-manager', 'qa-manager', 'devops-manager', 'architect'
+    ];
     
-    Specifications:
-    ${specifications}
-    
-    Complete your task according to the specifications and end with the appropriate marker:
-    - "Implementation Complete" if you're an associate finishing implementation
-    - "Task Assignment" if you're a manager delegating to an associate
-    - "Approved for Integration" if you're a manager approving work
-    - "Review Required" if changes are needed
-`;
+    const isManagerAgent = managerAgentTypes.some(managerType => 
+      agentType.includes(managerType) || agentType.includes('manager') || agentType.includes('lead')
+    );
+
+    if (isManagerAgent) {
+      return `You are an autonomous ${agentType} agent working on workflow ${workflowId}.
+
+Your task specifications:
+${specifications}
+
+🎯 TEAM COORDINATION MODE: You are a MANAGER agent with team coordination capabilities.
+
+Your role: ${agentType}
+Your objective: Complete the task according to specifications
+Your environment: Full MCP tools access for team coordination
+
+AVAILABLE CNS TOOLS:
+- launch_agent: Spawn specialized associate agents for your team
+- get_system_status: Monitor team performance and resource usage
+- retrieve_memory: Access shared project knowledge and context
+- store_memory: Store insights and handoff information for the team
+
+TEAM COORDINATION WORKFLOW:
+1. Complete your primary task first
+2. Use launch_agent to spawn associate agents as needed (code-reviewer, test-writer, etc.)
+3. Coordinate the team workflow through proper task delegation
+
+When finished, end your response with the appropriate completion marker:
+- "Task Assignment" if you're delegating work to associate agents
+- "Approved for Integration" if you're approving completed work
+- "Review Required" if changes are needed
+
+Begin your work now.`;
+    } else {
+      return `You are an autonomous ${agentType} agent working on workflow ${workflowId}.
+
+Your task specifications:
+${specifications}
+
+⚡ ASSOCIATE AGENT MODE: You are a specialized associate agent.
+
+Your role: ${agentType}
+Your objective: Complete the task according to specifications
+Your environment: Isolated execution (focus on your specific task)
+
+IMPORTANT: You are an associate agent working on a specific task. Do NOT use the Task tool or spawn other agents. Focus on completing your assigned work efficiently.
+
+When finished, end your response with the appropriate completion marker:
+- "Implementation Complete" if you've finished your assigned implementation
+- "Review Required" if you need manager review
+
+Begin your work now.`;
+    }
   }
 
   private async loadWorkflows() {

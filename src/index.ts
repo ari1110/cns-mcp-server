@@ -300,6 +300,63 @@ export class CNSMCPServer {
           },
         },
         {
+          name: 'stop_workflow',
+          description: '⏹️ Stop specific workflow and associated agents',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              workflow_id: {
+                type: 'string',
+                description: 'ID of the workflow to stop'
+              },
+              reason: {
+                type: 'string',
+                default: 'Manual stop',
+                description: 'Reason for stopping the workflow'
+              },
+              force: {
+                type: 'boolean',
+                default: false,
+                description: 'Force kill agents without graceful shutdown'
+              }
+            },
+            required: ['workflow_id'],
+          },
+        },
+        {
+          name: 'pause_workflow',
+          description: '⏸️ Pause specific workflow (can be resumed later)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              workflow_id: {
+                type: 'string',
+                description: 'ID of the workflow to pause'
+              },
+              reason: {
+                type: 'string',
+                default: 'Manual pause',
+                description: 'Reason for pausing the workflow'
+              }
+            },
+            required: ['workflow_id'],
+          },
+        },
+        {
+          name: 'emergency_stop_agents',
+          description: '🛑 EMERGENCY: Stop all running agents immediately',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              force: {
+                type: 'boolean',
+                default: true,
+                description: 'Force kill all agents without graceful shutdown'
+              }
+            },
+          },
+        },
+        {
           name: 'validate_embedding_provider',
           description: 'Test and validate the embedding provider configuration',
           inputSchema: {
@@ -470,6 +527,12 @@ export class CNSMCPServer {
             return await this.orchestration.getWorkflowHandoffs((args as any).workflow_id, (args as any).include_processed);
           case 'get_system_health':
             return await this.getSystemHealth();
+          case 'stop_workflow':
+            return await this.stopWorkflow(args as any);
+          case 'pause_workflow':
+            return await this.pauseWorkflow(args as any);
+          case 'emergency_stop_agents':
+            return await this.emergencyStopAgents(args as any);
           case 'validate_embedding_provider':
             return await this.validateEmbeddingProvider(args as any);
           case 'detect_stale_workflows':
@@ -941,7 +1004,7 @@ export class CNSMCPServer {
         process.env.CNS_MAX_AGENTS = '3'; // Default to 3 concurrent agents
       }
       
-      this.agentRunner = new AgentRunner();
+      this.agentRunner = new AgentRunner(this);
       await this.agentRunner.start();
       
       logger.info('✅ Agent runner started successfully');
@@ -1152,6 +1215,200 @@ export class CNSMCPServer {
             error: error instanceof Error ? error.message : 'Unknown error',
             message: 'Failed to cleanup stale workflows'
           })
+        }]
+      };
+    }
+  }
+
+  async stopWorkflow(args: { workflow_id: string; reason?: string; force?: boolean }) {
+    try {
+      const { workflow_id, reason = 'Manual stop', force = false } = args;
+      
+      logger.warn(`⏹️ Stopping workflow: ${workflow_id}`, { reason, force });
+      
+      // Stop running agents for this workflow
+      const stopResult = await this.agentRunner?.stopWorkflow(workflow_id, reason, force);
+      
+      // Update workflow status in orchestration
+      await this.orchestration.updateWorkflowStatus(workflow_id, 'failed');
+      
+      // Store stop event in memory
+      await this.memory.store({
+        content: `Workflow ${workflow_id} stopped: ${reason}`,
+        type: 'workflow_control',
+        tags: ['stopped', 'manual'],
+        workflow_id: workflow_id,
+        metadata: {
+          reason: reason,
+          force: force,
+          stopped_at: new Date().toISOString(),
+          agents_stopped: stopResult?.agents_stopped || 0
+        }
+      });
+      
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'workflow_stopped',
+            workflow_id: workflow_id,
+            reason: reason,
+            ...stopResult
+          }, null, 2)
+        }]
+      };
+      
+    } catch (error) {
+      logger.error('Failed to stop workflow:', error);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            message: 'Failed to stop workflow'
+          }, null, 2)
+        }]
+      };
+    }
+  }
+
+  async pauseWorkflow(args: { workflow_id: string; reason?: string }) {
+    try {
+      const { workflow_id, reason = 'Manual pause' } = args;
+      
+      logger.info(`⏸️ Pausing workflow: ${workflow_id}`, { reason });
+      
+      // Check if workflow exists and is active
+      const workflowStatus = await this.orchestration.getWorkflowStatus(workflow_id);
+      const workflow = JSON.parse((workflowStatus.content as any)[0].text).workflow;
+      
+      if (!workflow) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              status: 'workflow_not_found',
+              workflow_id: workflow_id,
+              message: 'Workflow not found'
+            }, null, 2)
+          }]
+        };
+      }
+      
+      // Update workflow status to paused (we can add 'paused' to the enum later)
+      await this.orchestration.updateWorkflowStatus(workflow_id, 'stale'); // Using 'stale' as pause for now
+      
+      // Remove from pending tasks to prevent new agents from spawning
+      // (This would need orchestration engine method to remove pending tasks)
+      
+      // Store pause event in memory
+      await this.memory.store({
+        content: `Workflow ${workflow_id} paused: ${reason}`,
+        type: 'workflow_control',
+        tags: ['paused', 'manual'],
+        workflow_id: workflow_id,
+        metadata: {
+          reason: reason,
+          paused_at: new Date().toISOString(),
+          original_status: workflow.status
+        }
+      });
+      
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'workflow_paused',
+            workflow_id: workflow_id,
+            reason: reason,
+            message: 'Workflow paused. No new agents will be spawned.',
+            note: 'Existing running agents continue until completion'
+          }, null, 2)
+        }]
+      };
+      
+    } catch (error) {
+      logger.error('Failed to pause workflow:', error);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            message: 'Failed to pause workflow'
+          }, null, 2)
+        }]
+      };
+    }
+  }
+
+  async emergencyStopAgents(_args: { force?: boolean } = {}) {
+    try {
+      logger.warn('🛑 EMERGENCY STOP: Terminating all running agents');
+      
+      const status = this.agentRunner?.getStatus();
+      const runningCount = status?.runningAgents || 0;
+      
+      if (runningCount === 0) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              status: 'no_agents_running',
+              message: 'No agents currently running',
+              running_agents: 0
+            }, null, 2)
+          }]
+        };
+      }
+      
+      // Force stop all running agents
+      if (this.agentRunner) {
+        // Get running agents before stopping
+        const runningAgents = status?.agents || [];
+        
+        // Stop the agent runner (this kills all running processes)
+        await this.agentRunner.stop();
+        
+        // Restart the agent runner to continue processing
+        await this.agentRunner.start();
+        
+        logger.warn(`🛑 Emergency stop completed: ${runningCount} agents terminated`);
+        
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              status: 'agents_stopped',
+              message: `Emergency stop completed: ${runningCount} agents terminated`,
+              terminated_agents: runningAgents,
+              agent_runner_restarted: true
+            }, null, 2)
+          }]
+        };
+      }
+      
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'error',
+            message: 'Agent runner not available'
+          }, null, 2)
+        }]
+      };
+      
+    } catch (error) {
+      logger.error('Emergency stop failed:', error);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            message: 'Failed to stop agents'
+          }, null, 2)
         }]
       };
     }

@@ -54,8 +54,8 @@ export class WorkspaceManager {
       // Validate base reference exists
       await this.validateBaseRef(baseRef);
       
-      // Create git worktree
-      await this.git.raw(['worktree', 'add', workspacePath, baseRef]);
+      // Create git worktree (detached to avoid branch conflicts)
+      await this.git.raw(['worktree', 'add', '--detach', workspacePath, baseRef]);
       
       // Verify workspace was created successfully
       await this.verifyWorkspaceCreated(workspacePath);

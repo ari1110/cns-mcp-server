@@ -3,7 +3,7 @@
  * CNS Agent Runner CLI - Command-line interface for the agent execution service
  */
 
-import { AgentRunner } from '../agent-runner/index.js';
+// import { AgentRunner } from '../agent-runner/index.js'; // Disabled
 import { logger } from '../utils/logger.js';
 
 async function main() {
@@ -27,7 +27,9 @@ Environment Variables:
     return;
   }
   
-  const runner = new AgentRunner();
+  // CLI runner disabled - needs refactoring for new architecture
+  console.log('CLI runner temporarily disabled - use full CNS server');
+  return;
   
   try {
     switch (command) {
@@ -35,19 +37,8 @@ Environment Variables:
         logger.info('Starting CNS Agent Runner...');
         
         // Handle graceful shutdown
-        process.on('SIGTERM', async () => {
-          logger.info('Received SIGTERM, shutting down gracefully...');
-          await runner.stop();
-          process.exit(0);
-        });
-        
-        process.on('SIGINT', async () => {
-          logger.info('Received SIGINT, shutting down gracefully...');
-          await runner.stop();
-          process.exit(0);
-        });
-        
-        await runner.start();
+        console.log('CLI start command temporarily disabled');
+        process.exit(0);
         
         // Keep process running
         logger.info('Agent Runner is running. Press Ctrl+C to stop.');

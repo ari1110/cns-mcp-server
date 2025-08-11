@@ -152,10 +152,11 @@ export class CNSDaemon {
     // Set environment variables for agent runner
     process.env.CNS_MAX_AGENTS = this.config.maxAgents.toString();
     
-    this.agentRunner = new AgentRunner();
+    // Daemon disabled - needs refactoring for new architecture
+    logger.info('Daemon agent runner temporarily disabled');
+    return;
     
     try {
-      await this.agentRunner.start();
       logger.info('✅ Agent runner started');
     } catch (error) {
       logger.error('Failed to start agent runner:', error);
