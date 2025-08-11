@@ -280,7 +280,7 @@ export function createEmbeddingProvider(config: any): EmbeddingProvider | null {
         config.embedding_dimension || parseInt(process.env.EMBEDDING_DIMENSION || '384')
       );
       
-    case 'openai':
+    case 'openai': {
       const apiKey = config.openai_api_key || process.env.OPENAI_API_KEY;
       if (!apiKey) {
         logger.warn('OpenAI API key not found, falling back to Transformers.js');
@@ -292,6 +292,7 @@ export function createEmbeddingProvider(config: any): EmbeddingProvider | null {
         config.embedding_model || process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
         config.embedding_dimension || parseInt(process.env.EMBEDDING_DIMENSION || '1536')
       );
+    }
       
     case 'mock':
       logger.info('Using mock embedding provider for development/testing');

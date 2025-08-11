@@ -415,7 +415,7 @@ export class WorkspaceManager {
           totalSize += stats.size;
         }
       }
-    } catch (error) {
+    } catch {
       // Skip directories we can't read
     }
     
@@ -435,7 +435,7 @@ export class WorkspaceManager {
   private sanitizePathComponent(component: string): string {
     // Remove dangerous characters and normalize
     return component
-      .replace(/[^a-zA-Z0-9\-_\.]/g, '_') // Replace invalid chars with underscore
+      .replace(/[^a-zA-Z0-9\-_.]/g, '_') // Replace invalid chars with underscore
       .replace(/^\.+/, '') // Remove leading dots
       .substring(0, 100) // Limit length
       .trim();

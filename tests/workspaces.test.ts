@@ -194,10 +194,11 @@ describe('WorkspaceManager E2E Tests', () => {
     expect(stats.worktrees).toBeInstanceOf(Array);
     expect(stats.worktrees.length).toBeGreaterThanOrEqual(2);
     
-    // Verify worktree details
+    // Verify worktree details - detached worktrees don't have branches
     const testWorktree = stats.worktrees.find(w => w.path.includes('stats-test-1'));
     expect(testWorktree).toBeDefined();
-    expect(testWorktree.branch).toBeDefined();
+    expect(testWorktree.commit).toBeDefined(); // HEAD commit should be defined
+    // Note: detached worktrees don't have branches, so testWorktree.branch will be undefined
   });
 
   test('should sanitize agent IDs properly', async () => {

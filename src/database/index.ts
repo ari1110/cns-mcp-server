@@ -69,7 +69,7 @@ export class Database {
     try {
       await this.db.exec(`ALTER TABLE handoffs ADD COLUMN task_details TEXT`);
       logger.info('Added task_details column to handoffs table');
-    } catch (error) {
+    } catch {
       // Column probably already exists, which is fine
     }
     

@@ -816,7 +816,7 @@ export class CNSMCPServer {
             ],
           };
 
-        case 'search':
+        case 'search': {
           const query = args?.query || '';
           return {
             description: '🔍 Search memories',
@@ -830,6 +830,7 @@ export class CNSMCPServer {
               },
             ],
           };
+        }
 
         case 'memories':
           return {

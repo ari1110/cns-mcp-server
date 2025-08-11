@@ -388,7 +388,7 @@ export class MemorySystem {
   private async performTextSearch(query: string, limit: number, filters: any): Promise<any[]> {
     try {
       let sql = 'SELECT * FROM memories WHERE content LIKE ?';
-      let params: any[] = [`%${query}%`];
+      const params: any[] = [`%${query}%`];
       
       // Apply filters
       if (filters.type) {
@@ -451,6 +451,7 @@ export class MemorySystem {
     
     // Clean up temporary fields
     return combinedResults.map(result => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { rank_boost, ...cleanResult } = result;
       return cleanResult;
     });

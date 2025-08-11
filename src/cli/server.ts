@@ -73,7 +73,7 @@ function validateSystem(verbose = false) {
     execSync('git rev-parse --git-dir', { stdio: 'pipe', cwd: process.cwd() });
     console.log('\n📁 Git Repository Check:');
     console.log('✓ Git is available and this is a Git repository');
-  } catch (error) {
+  } catch {
     console.log('\n📁 Git Repository Check:');
     console.log('⚠️  Not in a Git repository (workspace features will be limited)');
   }
@@ -148,10 +148,11 @@ async function main() {
     case 'init':
       initializeSystem();
       break;
-    case 'validate':
+    case 'validate': {
       const verbose = args.includes('--verbose');
       validateSystem(verbose);
       break;
+    }
     case 'daemon': {
       console.log('🚀 Starting CNS Daemon (Complete System)...');
       const { CNSDaemon } = await import('../daemon/index.js');

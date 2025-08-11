@@ -308,7 +308,7 @@ export class HookHandlers {
       // Look for task assignment patterns in the transcript
       // Extract the content between user requests and task completion markers
       const lines = transcriptContent.split('\n');
-      let taskDetails: string[] = [];
+      const taskDetails: string[] = [];
       let inTaskAssignment = false;
       
       for (let i = 0; i < lines.length; i++) {

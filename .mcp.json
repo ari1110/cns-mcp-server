@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "cns": {
+      "command": "node",
+      "args": [
+        "/home/ari1110/projects/cns-mcp-server/dist/index.js"
+      ],
+      "env": {
+        "DATABASE_PATH": "/home/ari1110/.cns/data/cns.db",
+        "EMBEDDING_PROVIDER": "transformers",
+        "EMBEDDING_MODEL": "Xenova/all-MiniLM-L6-v2",
+        "CNS_MAX_AGENTS": "3"
+      }
+    }
+  }
+}
