@@ -15,6 +15,9 @@ import {
   GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+
 import { HookHandlers } from './orchestration/hooks/index.js';
 import { MemorySystem } from './memory/index.js';
 import { WorkspaceManager } from './workspaces/index.js';
@@ -27,7 +30,21 @@ import { CNSError, gracefulShutdown } from './utils/error-handler.js';
 import { healthMonitor } from './utils/health-monitor.js';
 import { CNSCommands } from './commands/index.js';
 import { mkdir } from 'fs/promises';
-import { dirname } from 'path';
+import { dirname, join } from 'path';
+
+// Get package version dynamically
+function getPackageVersion(): string {
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    const packagePath = join(__dirname, '..', 'package.json');
+    const packageJson = JSON.parse(readFileSync(packagePath, 'utf8'));
+    return packageJson.version;
+  } catch (error) {
+    logger.warn('Failed to read package version, using fallback:', error);
+    return '1.2.2'; // Fallback version
+  }
+}
 
 export class CNSMCPServer {
   private server: Server;
@@ -43,7 +60,7 @@ export class CNSMCPServer {
     this.server = new Server(
       {
         name: 'cns-mcp-server',
-        version: '1.0.0',
+        version: getPackageVersion(),
       },
       {
         capabilities: {
@@ -861,7 +878,7 @@ export class CNSMCPServer {
 
     const status = {
       status: 'operational',
-      version: '1.0.0',
+      version: getPackageVersion(),
       uptime: process.uptime(),
       memory: memoryStats,
       workflows: workflowStats,

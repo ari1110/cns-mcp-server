@@ -9,10 +9,23 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { createRequire } from 'module';
-import { access, constants } from 'fs/promises';
+import { access, constants, readFile } from 'fs/promises';
 import { logger } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
+
+// Get package version dynamically
+async function getPackageVersion(): Promise<string> {
+  try {
+    const __dirname = dirname(__filename);
+    const packagePath = join(__dirname, '..', '..', 'package.json');
+    const packageJson = JSON.parse(await readFile(packagePath, 'utf8'));
+    return packageJson.version;
+  } catch (error) {
+    logger.warn('Failed to read package version, using fallback:', error);
+    return '1.2.2'; // Fallback version
+  }
+}
 const __dirname = dirname(__filename);
 const require = createRequire(import.meta.url);
 
@@ -57,11 +70,16 @@ export class CNSClient {
   private client: Client;
   private transport!: StdioClientTransport;
 
+  private version: string = '1.2.2';
+
   constructor() {
+    // Initialize version asynchronously
+    getPackageVersion().then(v => this.version = v);
+    
     this.client = new Client(
       {
         name: 'cns-client',
-        version: '1.0.0',
+        version: this.version,
       },
       {
         capabilities: {},
