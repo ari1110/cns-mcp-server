@@ -189,8 +189,8 @@ export class AgentRunner {
           CNS_DISABLE_MCP_CNS: isManagerAgent ? 'false' : 'true',
           MCP_SERVERS_CONFIG: isManagerAgent ? JSON.stringify({
             cns: {
-              command: 'node',
-              args: ['/home/ari1110/projects/cns-mcp-server/dist/index.js']
+              command: 'npx',
+              args: ['-y', 'cns-mcp-server']
             }
           }) : JSON.stringify({}), // Associates get no MCP servers
         }

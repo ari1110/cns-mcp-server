@@ -852,10 +852,11 @@ export class CNSMCPServer {
     const includeMetrics = options.include_metrics !== false;
     const includeHealthChecks = options.include_health_checks !== false;
 
-    const [memoryStats, workflowStats, workspaceStats] = await Promise.all([
+    const [memoryStats, workflowStats, workspaceStats, processStats] = await Promise.all([
       this.memory.getStats(),
       this.orchestration.getStats(),
       this.workspaces.getStats(),
+      this.getProcessStats(),
     ]);
 
     const status = {
@@ -865,6 +866,7 @@ export class CNSMCPServer {
       memory: memoryStats,
       workflows: workflowStats,
       workspaces: workspaceStats,
+      processes: processStats,
       timestamp: new Date().toISOString(),
     };
 
@@ -884,6 +886,76 @@ export class CNSMCPServer {
         },
       ],
     };
+  }
+
+  private async getProcessStats() {
+    try {
+      const { spawn } = await import('child_process');
+      
+      // Get total node/claude process count
+      const totalProcesses = await new Promise<number>((resolve) => {
+        const psProcess = spawn('ps', ['aux'], { stdio: ['pipe', 'pipe', 'pipe'] });
+        let output = '';
+        
+        psProcess.stdout?.on('data', (data: Buffer) => {
+          output += data.toString();
+        });
+        
+        psProcess.on('close', () => {
+          const nodeProcesses = output.split('\n')
+            .filter(line => line.includes('node') || line.includes('claude'))
+            .length;
+          resolve(nodeProcesses);
+        });
+        
+        psProcess.on('error', () => resolve(0));
+      });
+      
+      // Get CNS workspace process count (potential zombies)
+      const workspaceProcesses = await new Promise<number>((resolve) => {
+        const pgrepProcess = spawn('pgrep', ['-f', '.cns/workspaces'], { stdio: ['pipe', 'pipe', 'pipe'] });
+        let output = '';
+        
+        pgrepProcess.stdout?.on('data', (data: Buffer) => {
+          output += data.toString();
+        });
+        
+        pgrepProcess.on('close', (code) => {
+          if (code === 0) {
+            const pids = output.trim().split('\n').filter(pid => pid.length > 0);
+            resolve(pids.length);
+          } else {
+            resolve(0);
+          }
+        });
+        
+        pgrepProcess.on('error', () => resolve(0));
+      });
+      
+      // Get memory usage
+      const memUsage = process.memoryUsage();
+      
+      return {
+        total_node_claude_processes: totalProcesses,
+        cns_workspace_processes: workspaceProcesses,
+        current_process_memory: {
+          rss: memUsage.rss,
+          heap_total: memUsage.heapTotal,
+          heap_used: memUsage.heapUsed,
+          external: memUsage.external
+        },
+        zombie_process_warning: workspaceProcesses > 0 ? `${workspaceProcesses} zombie workspace processes detected` : null
+      };
+      
+    } catch (error) {
+      logger.error('Failed to get process stats:', error);
+      return {
+        total_node_claude_processes: 'unknown',
+        cns_workspace_processes: 'unknown',
+        current_process_memory: process.memoryUsage(),
+        error: 'Failed to collect process statistics'
+      };
+    }
   }
 
   private async getSystemHealth() {
@@ -1226,8 +1298,14 @@ export class CNSMCPServer {
       
       logger.warn(`⏹️ Stopping workflow: ${workflow_id}`, { reason, force });
       
+      // Check if agent runner is available
+      if (!this.agentRunner) {
+        logger.error('❌ Agent runner not available - cannot stop running agents');
+        throw new Error('Agent runner not initialized. Workflow may still have running agents.');
+      }
+      
       // Stop running agents for this workflow
-      const stopResult = await this.agentRunner?.stopWorkflow(workflow_id, reason, force);
+      const stopResult = await this.agentRunner.stopWorkflow(workflow_id, reason, force);
       
       // Update workflow status in orchestration
       await this.orchestration.updateWorkflowStatus(workflow_id, 'failed');
@@ -1250,10 +1328,8 @@ export class CNSMCPServer {
         content: [{
           type: 'text',
           text: JSON.stringify({
-            status: 'workflow_stopped',
-            workflow_id: workflow_id,
-            reason: reason,
-            ...stopResult
+            ...stopResult,
+            reason: reason
           }, null, 2)
         }]
       };

@@ -92,8 +92,74 @@ export class WorkspaceManager {
     }
   }
 
+  /**
+   * Terminate all processes using a specific workspace path
+   */
+  private async terminateWorkspaceProcesses(workspacePath: string, force: boolean = false): Promise<number> {
+    try {
+      // Find all processes using this workspace path
+      const { spawn } = await import('child_process');
+      
+      // Use pgrep to find processes with the workspace path in their command line
+      const pgrepResult = spawn('pgrep', ['-f', workspacePath], { stdio: ['pipe', 'pipe', 'pipe'] });
+      
+      let pids: string[] = [];
+      let pgrepOutput = '';
+      
+      pgrepResult.stdout?.on('data', (data: Buffer) => {
+        pgrepOutput += data.toString();
+      });
+      
+      await new Promise<void>((resolve, reject) => {
+        pgrepResult.on('close', (code) => {
+          if (code === 0) {
+            pids = pgrepOutput.trim().split('\n').filter(pid => pid.length > 0);
+          }
+          resolve();
+        });
+        pgrepResult.on('error', reject);
+      });
+      
+      if (pids.length === 0) {
+        logger.info('No processes found using workspace', { workspacePath });
+        return 0;
+      }
+      
+      logger.warn(`Terminating ${pids.length} processes using workspace`, { 
+        workspacePath, 
+        pids, 
+        force 
+      });
+      
+      // Kill processes
+      const signal = force ? 'SIGKILL' : 'SIGTERM';
+      let killedCount = 0;
+      
+      for (const pid of pids) {
+        try {
+          process.kill(parseInt(pid), signal);
+          killedCount++;
+          logger.info(`Terminated process ${pid} with ${signal}`);
+        } catch (error: any) {
+          logger.warn(`Failed to kill process ${pid}:`, error.message);
+        }
+      }
+      
+      // Wait a moment for graceful termination if not force
+      if (!force && killedCount > 0) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+      
+      return killedCount;
+      
+    } catch (error) {
+      logger.error('Failed to terminate workspace processes:', error);
+      return 0;
+    }
+  }
+
   async cleanup(args: { agent_id: string; force?: boolean }) {
-    logger.info('Cleaning up workspace', args);
+    logger.info('Cleaning up workspace with process termination', args);
     
     // Sanitize agent_id for safe path usage
     const sanitizedAgentId = this.sanitizePathComponent(args.agent_id);
@@ -117,6 +183,9 @@ export class WorkspaceManager {
         };
       }
 
+      // CRITICAL: Terminate all processes using this workspace FIRST
+      const killedProcesses = await this.terminateWorkspaceProcesses(workspacePath, args.force);
+
       // Remove git worktree
       try {
         const removeArgs = ['worktree', 'remove', workspacePath];
@@ -134,7 +203,9 @@ export class WorkspaceManager {
         }
       }
 
-      logger.info(`Cleaned up workspace: ${workspacePath}`);
+      logger.info(`Cleaned up workspace: ${workspacePath}`, { 
+        killed_processes: killedProcesses 
+      });
       
       return {
         content: [{
@@ -143,7 +214,8 @@ export class WorkspaceManager {
             status: 'cleaned', 
             agent_id: args.agent_id,
             workspace_path: workspacePath,
-            force: args.force || false
+            force: args.force || false,
+            killed_processes: killedProcesses
           }),
         }],
       };
