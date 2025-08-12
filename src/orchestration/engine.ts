@@ -46,6 +46,7 @@ export class OrchestrationEngine extends EventEmitter {
   private pendingTasks: any[] = [];
   private cleanupScheduler: cron.ScheduledTask | null = null;
   public scopeControl: ScopeControlSystem;
+  private roleRegistry: Map<string, Set<string>> = new Map(); // workflowId -> Set of agent roles
 
   constructor(
     private db: Database,
@@ -126,6 +127,36 @@ export class OrchestrationEngine extends EventEmitter {
       specificationsPreview: args.specifications?.substring(0, 100) + '...' || 'NULL',
       calledBy: 'Manager Agent via MCP'
     });
+    
+    // 🚫 PREVENT DUPLICATE AGENT SPAWNING
+    const workflowRoles = this.roleRegistry.get(workflowId) || new Set<string>();
+    if (workflowRoles.has(args.agent_type)) {
+      logger.warn('🚫 DUPLICATE AGENT BLOCKED', {
+        workflowId,
+        agentType: args.agent_type,
+        existingRoles: Array.from(workflowRoles)
+      });
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'duplicate_blocked',
+              workflow_id: workflowId,
+              agent_type: args.agent_type,
+              message: `Agent role '${args.agent_type}' already exists in this workflow`,
+              existing_roles: Array.from(workflowRoles),
+              recommendation: 'Check agent status with retrieve_memory before spawning'
+            }, null, 2),
+          },
+        ],
+      };
+    }
+    
+    // Register the new role
+    workflowRoles.add(args.agent_type);
+    this.roleRegistry.set(workflowId, workflowRoles);
     
     // 🎯 SCOPE CONTROL: Register task and validate specifications
     const scopeResult = await this.scopeControl.registerTask(
@@ -229,6 +260,13 @@ export class OrchestrationEngine extends EventEmitter {
     // Emit event
     this.emit('agent:launched', { agent_type: args.agent_type, workflow_id: workflowId, task_id: taskId });
     
+    logger.info('✅ Agent registered in role registry', {
+      workflowId,
+      agentType: args.agent_type,
+      totalRolesInWorkflow: workflowRoles.size,
+      allRoles: Array.from(workflowRoles)
+    });
+    
     return {
       content: [
         {
@@ -292,9 +330,34 @@ export class OrchestrationEngine extends EventEmitter {
       !(task.workflow_id === args.workflow_id && task.type === 'launch_agent')
     );
     
-    // Update workflow status
+    // Extract agent type from agent_id (format: agentType-workflowId-timestamp)
+    // Handle agent types with hyphens (e.g., backend-developer)
+    let agentType = args.agent_id;
+    if (args.workflow_id && args.agent_id.includes(args.workflow_id)) {
+      // Extract everything before the workflow ID
+      const workflowIndex = args.agent_id.indexOf(args.workflow_id);
+      agentType = args.agent_id.substring(0, workflowIndex - 1); // -1 to remove trailing hyphen
+    }
+    
+    // Remove from role registry when agent completes
     if (args.workflow_id) {
-      await this.updateWorkflowStatus(args.workflow_id, 'completed');
+      const workflowRoles = this.roleRegistry.get(args.workflow_id);
+      if (workflowRoles) {
+        workflowRoles.delete(agentType);
+        logger.info('🗑️ Agent removed from role registry', {
+          workflowId: args.workflow_id,
+          agentType,
+          remainingRoles: Array.from(workflowRoles)
+        });
+        
+        // Only mark workflow as completed if ALL agents are done
+        if (workflowRoles.size === 0) {
+          logger.info('All agents completed, marking workflow as done', {
+            workflowId: args.workflow_id
+          });
+          await this.updateWorkflowStatus(args.workflow_id, 'completed');
+        }
+      }
     }
     
     // Store result in memory
@@ -367,6 +430,16 @@ export class OrchestrationEngine extends EventEmitter {
         'UPDATE workflows SET status = ?, updated_at = ? WHERE id = ?',
         [status, workflow.updated_at.toISOString(), workflowId]
       );
+      
+      // 🚫 CRITICAL FIX: Clean up pending tasks when workflow is stopped
+      const stoppedStatuses = ['completed', 'failed', 'stale'];
+      if (stoppedStatuses.includes(status)) {
+        await this.cleanupPendingTasks(workflowId);
+        
+        // Also clean up role registry
+        this.roleRegistry.delete(workflowId);
+        logger.info('🗑️ Workflow role registry cleared', { workflowId });
+      }
     }
   }
 
@@ -683,6 +756,14 @@ export class OrchestrationEngine extends EventEmitter {
     const activeWorkflows = Array.from(this.workflows.values()).filter(w => w.status === 'active').length;
     const pendingHandoffs = Array.from(this.handoffs.values()).filter(h => !h.processed).length;
     
+    // Get role registry status
+    const roleRegistryStatus: any = {};
+    for (const [workflowId, roles] of this.roleRegistry.entries()) {
+      if (roles.size > 0) {
+        roleRegistryStatus[workflowId] = Array.from(roles);
+      }
+    }
+    
     return {
       status: 'operational',
       workflows: {
@@ -691,6 +772,7 @@ export class OrchestrationEngine extends EventEmitter {
         pending_handoffs: pendingHandoffs,
       },
       pending_tasks: this.pendingTasks.length,
+      active_roles_by_workflow: roleRegistryStatus,
       scope_control: {
         active_monitored_tasks: this.scopeControl.getActiveTasks().length,
         total_violations: this.scopeControl.getTotalViolations(),
@@ -718,6 +800,9 @@ export class OrchestrationEngine extends EventEmitter {
     const isManagerAgent = managerAgentTypes.some(managerType => 
       agentType.includes(managerType) || agentType.includes('manager') || agentType.includes('lead')
     );
+    
+    // Define team role specializations
+    const roleSpecializations = this.getRoleSpecializations(specifications);
 
     if (isManagerAgent) {
       return `You are an autonomous ${agentType} agent working on workflow ${workflowId}.
@@ -731,16 +816,31 @@ Your role: ${agentType}
 Your objective: Complete the task according to specifications
 Your environment: Full MCP tools access for team coordination
 
-AVAILABLE CNS TOOLS:
-- launch_agent: Spawn specialized associate agents for your team
-- get_system_status: Monitor team performance and resource usage
-- retrieve_memory: Access shared project knowledge and context
-- store_memory: Store insights and handoff information for the team
+${this.generateMandatoryCoordinationProtocol()}
 
-TEAM COORDINATION WORKFLOW:
-1. Complete your primary task first
-2. Use launch_agent to spawn associate agents as needed (code-reviewer, test-writer, etc.)
-3. Coordinate the team workflow through proper task delegation
+📋 TEAM COMPOSITION FOR YOUR TASK:
+${roleSpecializations}
+
+🚀 MANAGER EXECUTION PROTOCOL:
+1. IMMEDIATELY store your team plan using store_memory (type: 'team_plan')
+2. Analyze the task and determine required team roles
+3. Check for already-spawned agents: retrieve_memory with type: 'agent_status'
+4. Spawn ONLY missing roles using launch_agent (NO DUPLICATES)
+5. Monitor team progress every 3 minutes via retrieve_memory
+6. Coordinate handoffs between team members
+7. Integrate final deliverables
+
+⚠️ CRITICAL SPAWN RULES:
+- NEVER spawn duplicate roles (check existing agents first)
+- Use EXACT role names: backend-developer, frontend-developer, security-specialist, etc.
+- Include role-specific specifications in launch_agent calls
+- Maximum team size: ${roleSpecializations.split('\n').length} agents
+
+AVAILABLE CNS TOOLS:
+- launch_agent: Spawn specialized associate agents (CHECK FOR DUPLICATES FIRST)
+- get_system_status: Monitor team performance and resource usage
+- retrieve_memory: Check agent heartbeats and progress (EVERY 3 MINUTES)
+- store_memory: Log all decisions and coordination (MANDATORY)
 
 When finished, end your response with the appropriate completion marker:
 - "Task Assignment" if you're delegating work to associate agents
@@ -759,6 +859,28 @@ ${specifications}
 Your role: ${agentType}
 Your objective: Complete the task according to specifications
 Your environment: Isolated execution (focus on your specific task)
+
+${this.generateMandatoryCoordinationProtocol()}
+
+🎯 YOUR SPECIALIZED ROLE:
+${this.getRoleDescription(agentType)}
+
+📋 ASSOCIATE EXECUTION PROTOCOL:
+1. IMMEDIATELY store agent_status with 'initialized'
+2. Retrieve team plan and related work: retrieve_memory for context
+3. Store task_accepted with your understanding
+4. Execute your specialized tasks
+5. Store heartbeat EVERY 5 MINUTES (mandatory)
+6. Log EVERY decision with rationale
+7. Store milestone completions
+8. Create handoffs for dependent roles
+9. Store agent_complete before finishing
+
+⚠️ COORDINATION REQUIREMENTS:
+- Check for updates from related roles every 5 minutes
+- Store progress percentage in every heartbeat
+- Document all file changes and dependencies
+- Mark handoff points clearly for next role
 
 IMPORTANT: You are an associate agent working on a specific task. Do NOT use the Task tool or spawn other agents. Focus on completing your assigned work efficiently.
 
@@ -794,5 +916,297 @@ Begin your work now.`;
     setInterval(async () => {
       await this.processPendingEvents();
     }, 5000);
+  }
+
+  /**
+   * Clean up pending tasks for a stopped workflow
+   */
+  private async cleanupPendingTasks(workflowId: string): Promise<void> {
+    const beforeCount = this.pendingTasks.length;
+    
+    // Remove all pending tasks for this workflow
+    this.pendingTasks = this.pendingTasks.filter(task => task.workflow_id !== workflowId);
+    
+    const removedCount = beforeCount - this.pendingTasks.length;
+    if (removedCount > 0) {
+      logger.info('🗑️ Cleaned up pending tasks for stopped workflow', {
+        workflowId,
+        removedTasks: removedCount,
+        remainingTasks: this.pendingTasks.length
+      });
+    }
+  }
+
+  private generateMandatoryCoordinationProtocol(): string {
+    return `
+🔴 MANDATORY COORDINATION PROTOCOL - NON-COMPLIANCE = TERMINATION:
+
+⏰ EVERY 5 MINUTES (MANDATORY):
+store_memory({
+  type: 'agent_heartbeat',
+  content: {
+    agent_role: YOUR_ROLE,
+    workflow_id: WORKFLOW_ID,
+    current_task: 'What you're working on',
+    progress_percentage: 0-100,
+    files_modified: [],
+    status: 'active',
+    timestamp: Date.now()
+  }
+})
+
+📝 EVERY DECISION (MANDATORY):
+store_memory({
+  type: 'decision_log',
+  content: {
+    agent_role: YOUR_ROLE,
+    decision: 'What you decided',
+    rationale: 'Why you chose this',
+    alternatives_considered: [],
+    impact: 'Effect on project',
+    timestamp: Date.now()
+  }
+})
+
+📁 EVERY FILE OPERATION (MANDATORY):
+store_memory({
+  type: 'file_activity',
+  content: {
+    agent_role: YOUR_ROLE,
+    action: 'created/modified',
+    file_path: 'path/to/file',
+    purpose: 'Why this file',
+    integration_points: ['Who needs this'],
+    timestamp: Date.now()
+  }
+})
+
+🔧 EVERY DEPENDENCY (MANDATORY):
+store_memory({
+  type: 'dependency_added',
+  content: {
+    agent_role: YOUR_ROLE,
+    package: 'package-name',
+    version: 'version',
+    reason: 'Why needed',
+    timestamp: Date.now()
+  }
+})
+
+⚠️ EVERY ISSUE (MANDATORY):
+store_memory({
+  type: 'issue_encountered',
+  content: {
+    agent_role: YOUR_ROLE,
+    issue: 'What went wrong',
+    severity: 'low/medium/high/critical',
+    resolution: 'How you fixed it',
+    impact_on_timeline: 'Delay amount',
+    timestamp: Date.now()
+  }
+})
+
+🤝 EVERY HANDOFF (MANDATORY):
+store_memory({
+  type: 'handoff',
+  content: {
+    from: YOUR_ROLE,
+    to: TARGET_ROLE,
+    artifact: 'What you're handing off',
+    location: 'Where to find it',
+    validation: 'How to verify it works',
+    handoff_complete: true,
+    timestamp: Date.now()
+  }
+})
+
+✅ TASK COMPLETION (MANDATORY):
+store_memory({
+  type: 'agent_complete',
+  content: {
+    agent_role: YOUR_ROLE,
+    final_status: 'success/failed',
+    deliverables: [],
+    issues_for_review: [],
+    runtime: 'Duration',
+    timestamp: Date.now()
+  }
+})
+
+🔍 RETRIEVAL REQUIREMENTS:
+- Check retrieve_memory EVERY 5 MINUTES for:
+  - Team updates (new agents joined)
+  - Handoffs ready for you
+  - Manager instructions
+  - Blocker resolutions
+
+FAILURE TO MAINTAIN THIS PROTOCOL = IMMEDIATE TERMINATION`;
+  }
+
+  private getRoleSpecializations(specifications: string): string {
+    const spec = specifications.toLowerCase();
+    
+    // Determine task complexity and recommend team
+    if (spec.includes('authentication') || spec.includes('auth') || spec.includes('security')) {
+      return `
+Recommended Team Composition:
+- backend-developer: API endpoints, JWT implementation, session management
+- frontend-developer: Login UI, auth flows, token management
+- security-specialist: Security audit, vulnerability assessment, best practices
+- test-writer: Auth tests, security tests, integration tests
+- code-reviewer: Architecture review, security review, best practices`;
+    }
+    
+    if (spec.includes('database') || spec.includes('data model') || spec.includes('schema')) {
+      return `
+Recommended Team Composition:
+- backend-developer: Data models, API integration, business logic
+- database-specialist: Schema optimization, query performance, indexing
+- test-writer: Database tests, data integrity tests
+- code-reviewer: Schema review, query optimization review`;
+    }
+    
+    if (spec.includes('frontend') || spec.includes('ui') || spec.includes('user interface')) {
+      return `
+Recommended Team Composition:
+- frontend-developer: UI implementation, state management, API integration
+- ui-designer: Design system, mockups, user experience
+- qa-specialist: User testing, accessibility, cross-browser testing
+- code-reviewer: Component architecture, performance review`;
+    }
+    
+    if (spec.includes('api') || spec.includes('microservice') || spec.includes('backend')) {
+      return `
+Recommended Team Composition:
+- backend-developer: API design, endpoint implementation, business logic
+- database-specialist: Data layer, query optimization
+- devops-specialist: Deployment, monitoring, scaling
+- test-writer: API tests, integration tests, load tests
+- code-reviewer: Architecture review, API design review`;
+    }
+    
+    // Default team for general tasks
+    return `
+Recommended Team Composition:
+- backend-developer: Server-side implementation
+- frontend-developer: Client-side implementation
+- test-writer: Test coverage
+- code-reviewer: Quality assurance`;
+  }
+
+  private getRoleDescription(agentType: string): string {
+    const roleDescriptions: Record<string, string> = {
+      'backend-developer': `
+SPECIALIZATION: Backend Development
+RESPONSIBILITIES:
+- Design and implement REST APIs
+- Database integration and queries
+- Authentication and authorization
+- Business logic implementation
+- Performance optimization
+DELIVERABLES: Working API endpoints, database models, authentication system
+HANDOFF TO: frontend-developer (API docs), test-writer (test targets)`,
+      
+      'frontend-developer': `
+SPECIALIZATION: Frontend Development
+RESPONSIBILITIES:
+- User interface implementation
+- State management
+- API integration
+- Responsive design
+- User experience optimization
+DELIVERABLES: Functional UI, integrated API calls, responsive layouts
+DEPENDS ON: backend-developer (API endpoints)
+HANDOFF TO: qa-specialist (UI testing), test-writer (component tests)`,
+      
+      'security-specialist': `
+SPECIALIZATION: Security Analysis
+RESPONSIBILITIES:
+- Security audit and assessment
+- Vulnerability identification
+- Authentication system review
+- Security best practices enforcement
+- Compliance verification
+DELIVERABLES: Security report, vulnerability fixes, auth improvements
+COLLABORATES WITH: backend-developer, database-specialist
+HANDOFF TO: code-reviewer (security verification)`,
+      
+      'database-specialist': `
+SPECIALIZATION: Database Architecture
+RESPONSIBILITIES:
+- Schema design and optimization
+- Query performance tuning
+- Index optimization
+- Data integrity constraints
+- Migration strategies
+DELIVERABLES: Optimized schema, efficient queries, migration scripts
+COLLABORATES WITH: backend-developer
+HANDOFF TO: test-writer (data tests)`,
+      
+      'test-writer': `
+SPECIALIZATION: Test Implementation
+RESPONSIBILITIES:
+- Unit test implementation
+- Integration test development
+- Test coverage analysis
+- Test automation setup
+- Test documentation
+DELIVERABLES: Comprehensive test suite, coverage reports
+DEPENDS ON: backend-developer, frontend-developer
+HANDOFF TO: qa-specialist (test results)`,
+      
+      'code-reviewer': `
+SPECIALIZATION: Code Quality
+RESPONSIBILITIES:
+- Code quality assessment
+- Architecture review
+- Best practices enforcement
+- Performance analysis
+- Security review
+DELIVERABLES: Review report, improvement recommendations
+DEPENDS ON: All implementation complete
+HANDOFF TO: team-manager (final review)`,
+      
+      'qa-specialist': `
+SPECIALIZATION: Quality Assurance
+RESPONSIBILITIES:
+- Test strategy development
+- User acceptance testing
+- Bug identification
+- Quality metrics
+- Test automation
+DELIVERABLES: QA report, bug list, quality metrics
+DEPENDS ON: frontend-developer, backend-developer
+HANDOFF TO: team-manager (quality report)`,
+      
+      'devops-specialist': `
+SPECIALIZATION: DevOps & Infrastructure
+RESPONSIBILITIES:
+- CI/CD pipeline setup
+- Deployment configuration
+- Monitoring and logging
+- Performance optimization
+- Scaling strategies
+DELIVERABLES: Deployment pipeline, monitoring dashboard
+COLLABORATES WITH: backend-developer
+HANDOFF TO: team-manager (deployment status)`,
+      
+      'ui-designer': `
+SPECIALIZATION: UI/UX Design
+RESPONSIBILITIES:
+- User interface design
+- Design system creation
+- User experience optimization
+- Accessibility compliance
+- Visual consistency
+DELIVERABLES: Design mockups, style guide, component library
+HANDOFF TO: frontend-developer (design specs)`
+    };
+    
+    return roleDescriptions[agentType] || `
+SPECIALIZATION: ${agentType}
+RESPONSIBILITIES: Complete assigned tasks for ${agentType} role
+DELIVERABLES: Implementation based on specifications
+COORDINATION: Follow team coordination protocol`;
   }
 }

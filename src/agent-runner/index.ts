@@ -108,6 +108,20 @@ export class AgentRunner {
       const tasksToExecute = pendingTasks.slice(0, availableSlots);
       
       for (const task of tasksToExecute) {
+        // 🚫 CRITICAL FIX: Check if workflow is still active before spawning agents
+        const workflowStatus = await this.validateWorkflowStatus(task.workflow_id);
+        if (workflowStatus.shouldStop) {
+          logger.warn('🚫 Skipping task - workflow stopped', {
+            taskId: `${task.agent_type}-${task.workflow_id}`,
+            workflowStatus: workflowStatus.status,
+            reason: workflowStatus.reason
+          });
+          
+          // Remove the pending task from queue since workflow is stopped
+          await this.removePendingTask(task);
+          continue;
+        }
+        
         await this.executeAgent(task);
       }
       
@@ -424,5 +438,74 @@ export class AgentRunner {
         runtime: Date.now() - agent.startTime.getTime()
       }))
     };
+  }
+
+  /**
+   * Validate if a workflow is still active and should continue spawning agents
+   */
+  private async validateWorkflowStatus(workflowId: string): Promise<{
+    shouldStop: boolean;
+    status: string;
+    reason: string;
+  }> {
+    try {
+      const response = await this.cnsServer.orchestration.getWorkflowStatus(workflowId);
+      const workflowData = JSON.parse((response.content as any)[0].text);
+      
+      if (workflowData.error) {
+        return {
+          shouldStop: true,
+          status: 'not_found',
+          reason: 'Workflow not found'
+        };
+      }
+      
+      const workflow = workflowData.workflow;
+      const stoppedStatuses = ['failed', 'completed', 'stale'];
+      
+      if (stoppedStatuses.includes(workflow.status)) {
+        return {
+          shouldStop: true,
+          status: workflow.status,
+          reason: `Workflow status is ${workflow.status}`
+        };
+      }
+      
+      return {
+        shouldStop: false,
+        status: workflow.status,
+        reason: 'Workflow is active'
+      };
+      
+    } catch (error) {
+      logger.error('Failed to validate workflow status', { workflowId, error });
+      
+      // In case of error, allow the task to proceed but log warning
+      return {
+        shouldStop: false,
+        status: 'unknown',
+        reason: 'Status validation failed - allowing execution'
+      };
+    }
+  }
+
+  /**
+   * Remove a pending task from the orchestration queue
+   */
+  private async removePendingTask(task: PendingTask): Promise<void> {
+    try {
+      // Remove from orchestration engine's pending tasks
+      // This would need to be implemented in the orchestration engine
+      logger.info('🗑️ Removing pending task from queue', {
+        taskId: `${task.agent_type}-${task.workflow_id}`,
+        workflowId: task.workflow_id
+      });
+      
+      // For now, we'll just log - the orchestration engine should 
+      // handle cleanup of stopped workflow tasks automatically
+      
+    } catch (error) {
+      logger.error('Failed to remove pending task', { task, error });
+    }
   }
 }
