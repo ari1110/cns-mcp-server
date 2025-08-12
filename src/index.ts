@@ -415,6 +415,47 @@ export class CNSMCPServer {
             },
           },
         },
+        {
+          name: 'get_scope_control_status',
+          description: 'Get comprehensive scope control system status and monitoring data',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+          },
+        },
+        {
+          name: 'check_task_scope_violations',
+          description: 'Check for scope violations on a specific task',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              task_id: {
+                type: 'string',
+                description: 'ID of the task to check'
+              }
+            },
+            required: ['task_id']
+          },
+        },
+        {
+          name: 'update_scope_constraints',
+          description: 'Update scope constraints for better control (admin tool)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              constraint_type: {
+                type: 'string',
+                enum: ['resource', 'team', 'complexity'],
+                description: 'Type of constraint to update'
+              },
+              new_limits: {
+                type: 'object',
+                description: 'New limit values'
+              }
+            },
+            required: ['constraint_type', 'new_limits']
+          },
+        },
       ],
     }));
 
@@ -556,6 +597,12 @@ export class CNSMCPServer {
             return await this.detectStaleWorkflows(args as any);
           case 'cleanup_stale_workflows':
             return await this.cleanupStaleWorkflows(args as any);
+          case 'get_scope_control_status':
+            return await this.getScopeControlStatus();
+          case 'check_task_scope_violations':
+            return await this.checkTaskScopeViolations(args as any);
+          case 'update_scope_constraints':
+            return await this.updateScopeConstraints(args as any);
 
           default:
             throw new Error(`Unknown tool: ${name}`);
@@ -1533,6 +1580,132 @@ export class CNSMCPServer {
       
       logger.info('🎯 CNS MCP Server shutdown complete');
     });
+  }
+
+  // 🎯 SCOPE CONTROL METHODS
+
+  private async getScopeControlStatus() {
+    try {
+      const scopeStatus = this.orchestration.scopeControl.getStatus();
+      
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'success',
+            scope_control: scopeStatus,
+            timestamp: new Date().toISOString()
+          }, null, 2)
+        }]
+      };
+    } catch (error) {
+      logger.error('Failed to get scope control status', { error });
+      
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            message: 'Failed to get scope control status'
+          })
+        }]
+      };
+    }
+  }
+
+  private async checkTaskScopeViolations(args: { task_id: string }) {
+    try {
+      const { task_id } = args;
+      const taskStatus = this.orchestration.scopeControl.getTaskStatus(task_id);
+      
+      if (!taskStatus.found) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              status: 'not_found',
+              task_id: task_id,
+              message: 'Task not found in scope monitoring'
+            })
+          }]
+        };
+      }
+      
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'success',
+            task_id: task_id,
+            task_status: taskStatus,
+            timestamp: new Date().toISOString()
+          }, null, 2)
+        }]
+      };
+    } catch (error) {
+      logger.error('Failed to check task scope violations', { error, args });
+      
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            message: 'Failed to check task scope violations'
+          })
+        }]
+      };
+    }
+  }
+
+  private async updateScopeConstraints(args: { constraint_type: string; new_limits: any }) {
+    try {
+      const { constraint_type, new_limits } = args;
+      
+      // This is an admin-level operation - log it clearly
+      logger.warn('🎯 ADMIN: Updating scope constraints', { 
+        constraint_type, 
+        new_limits,
+        timestamp: new Date().toISOString()
+      });
+      
+      // For now, this is a read-only operation that shows current constraints
+      // In a full implementation, this would update the scope control system
+      
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'info',
+            message: 'Scope constraint updates are currently read-only',
+            current_constraints: {
+              resource: 'maxWorkspaceSize: 10MB, maxExecutionTime: 15min',
+              team: 'maxTeamSize: 3, maxDelegationDepth: 2',
+              complexity: 'autoStopOnOverengineering: true'
+            },
+            requested_change: {
+              constraint_type: constraint_type,
+              new_limits: new_limits
+            },
+            note: 'Contact system administrator to modify scope constraints'
+          }, null, 2)
+        }]
+      };
+    } catch (error) {
+      logger.error('Failed to update scope constraints', { error, args });
+      
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            message: 'Failed to update scope constraints'
+          })
+        }]
+      };
+    }
   }
 }
 

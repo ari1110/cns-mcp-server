@@ -8,6 +8,7 @@ import * as cron from 'node-cron';
 import { Database } from '../database/index.js';
 import { MemorySystem } from '../memory/index.js';
 import { WorkspaceManager } from '../workspaces/index.js';
+import { ScopeControlSystem } from './scope-control.js';
 import { logger } from '../utils/logger.js';
 
 interface Handoff {
@@ -44,6 +45,7 @@ export class OrchestrationEngine extends EventEmitter {
   private handoffs: Map<string, Handoff> = new Map();
   private pendingTasks: any[] = [];
   private cleanupScheduler: cron.ScheduledTask | null = null;
+  public scopeControl: ScopeControlSystem;
 
   constructor(
     private db: Database,
@@ -51,6 +53,12 @@ export class OrchestrationEngine extends EventEmitter {
     private workspaces: WorkspaceManager
   ) {
     super();
+    this.scopeControl = new ScopeControlSystem();
+    
+    // Forward scope control events
+    this.scopeControl.on('scope:violations', (data) => {
+      this.emit('scope:violations', data);
+    });
   }
 
   async start() {
@@ -108,6 +116,7 @@ export class OrchestrationEngine extends EventEmitter {
    */
   async launchAgent(args: LaunchAgentArgs) {
     const workflowId = args.workflow_id || uuidv4();
+    const taskId = `${args.agent_type}-${workflowId}`;
     
     logger.info('🚀 MCP TOOL USED: launch_agent called', { 
       agent: args.agent_type, 
@@ -117,6 +126,45 @@ export class OrchestrationEngine extends EventEmitter {
       specificationsPreview: args.specifications?.substring(0, 100) + '...' || 'NULL',
       calledBy: 'Manager Agent via MCP'
     });
+    
+    // 🎯 SCOPE CONTROL: Register task and validate specifications
+    const scopeResult = await this.scopeControl.registerTask(
+      taskId,
+      workflowId,
+      args.agent_type,
+      args.specifications
+    );
+    
+    if (!scopeResult.success) {
+      logger.warn('🚫 Task blocked by scope control', {
+        taskId,
+        violations: scopeResult.violations
+      });
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'blocked',
+              workflow_id: workflowId,
+              agent_type: args.agent_type,
+              reason: 'Scope control violations',
+              violations: scopeResult.violations,
+              recommendations: scopeResult.violations.map(v => v.recommendedAction)
+            }, null, 2),
+          },
+        ],
+      };
+    }
+    
+    // Log scope control warnings
+    if (scopeResult.violations.length > 0) {
+      logger.warn('⚠️ Scope control warnings for task', {
+        taskId,
+        violations: scopeResult.violations.map(v => v.message)
+      });
+    }
     
     // Create or update workflow
     const workflow: Workflow = {
@@ -147,32 +195,39 @@ export class OrchestrationEngine extends EventEmitter {
       metadata: {
         agent_type: args.agent_type,
         created_at: new Date().toISOString(),
+        scope_constraints: scopeResult.constraints
       },
     });
     
     // Create workspace if needed
     if (args.workspace_config) {
       await this.workspaces.create({
-        agent_id: `${args.agent_type}-${workflowId}`,
+        agent_id: taskId,
         base_ref: args.workspace_config.base_ref || 'main',
         resources: args.workspace_config.resources,
       });
     }
     
-    // Generate Task tool prompt
-    const prompt = this.generateTaskPrompt(args.agent_type, args.specifications, workflowId);
+    // Generate Task tool prompt with scope constraints
+    const scopedSpecifications = this.scopeControl.generateScopedSpecifications(
+      args.specifications, 
+      scopeResult.constraints
+    );
+    const prompt = this.generateTaskPrompt(args.agent_type, scopedSpecifications, workflowId);
     
     // Queue for execution
     this.pendingTasks.push({
       type: 'launch_agent',
       agent_type: args.agent_type,
       workflow_id: workflowId,
+      task_id: taskId,
       prompt,
+      scope_constraints: scopeResult.constraints,
       created_at: new Date(),
     });
     
     // Emit event
-    this.emit('agent:launched', { agent_type: args.agent_type, workflow_id: workflowId });
+    this.emit('agent:launched', { agent_type: args.agent_type, workflow_id: workflowId, task_id: taskId });
     
     return {
       content: [
@@ -182,6 +237,14 @@ export class OrchestrationEngine extends EventEmitter {
             status: 'queued',
             workflow_id: workflowId,
             agent_type: args.agent_type,
+            task_id: taskId,
+            scope_constraints: {
+              complexity: scopeResult.constraints.complexityThreshold,
+              max_workspace_size: Math.round(scopeResult.constraints.maxWorkspaceSize / 1024 / 1024) + 'MB',
+              max_execution_time: scopeResult.constraints.maxExecutionTime + ' minutes',
+              max_team_size: scopeResult.constraints.maxTeamSize + ' agents'
+            },
+            violations: scopeResult.violations.length,
             prompt_preview: prompt.substring(0, 200) + '...',
           }, null, 2),
         },
@@ -628,6 +691,11 @@ export class OrchestrationEngine extends EventEmitter {
         pending_handoffs: pendingHandoffs,
       },
       pending_tasks: this.pendingTasks.length,
+      scope_control: {
+        active_monitored_tasks: this.scopeControl.getActiveTasks().length,
+        total_violations: this.scopeControl.getTotalViolations(),
+        recent_auto_stops: this.scopeControl.getRecentAutoStops()
+      }
     };
   }
 
