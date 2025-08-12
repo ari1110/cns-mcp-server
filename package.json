@@ -1,6 +1,6 @@
 {
   "name": "cns-mcp-server",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Central Nervous System MCP Server for Autonomous Multi-Agent Orchestration with free local embeddings",
   "main": "dist/index.js",
   "type": "module",
